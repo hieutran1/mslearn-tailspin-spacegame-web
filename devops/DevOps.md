@@ -1,11 +1,22 @@
 # DevOps
 
+- 1. Get started with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
+- 2. Build applications with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
+
+- Code quality: automated testing
+    + Run quality tests in build pipeline: https://learn.microsoft.com/en-us/training/modules/run-quality-tests-build-pipeline/
+    + Run functional tests in Azure pipeline: https://learn.microsoft.com/en-us/training/modules/run-functional-tests-azure-pipelines
+
 ## Pipeline
 
 1. Create multi stage pipeline
     - release approvals: combine approvals, conditions, and triggers
 
     - environment: Azure App Service instance
+        + Library: Variable groups: Release --> mapping to Azure resources name
+            - WebAppNameDev: tailspin-space-game-web-dev-001
+            - WebAppNameStaging: tailspin-space-game-web-staging-001
+
     - trigger: scheduled trigger, CI trigger, PR trigger, a build completion trigger.
     - release approval: pause the pipeline
 
@@ -37,3 +48,21 @@
 
         az webapp list --resource-group rg-tailspin-space-game --query "[].{hostName: defaultHostName, state: state}" --output table
         ```
+
+    3. Clean up
+        ```
+        az group delete --name rg-tailspin-space-game
+        az group list --output table
+        ```
+
+3. Git
+    ```
+    git add azure-pipelines.yml
+    git commit -m "Deploy to Staging"
+    git push origin release
+    ```
+
+## Testing
+1. Automated test
+2. Test pyramid: 
+    - (1) UI --> ... --> (2) Unit
