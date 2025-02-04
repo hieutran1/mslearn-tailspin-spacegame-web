@@ -68,6 +68,8 @@
     - (1) UI --> ... --> (2) Unit
 
 ```
+dotnet tool restore
+
 dotnet new tool-manifest
 dotnet tool install dotnet-reportgenerator-globaltool
 
@@ -85,3 +87,8 @@ dotnet tool run reportgenerator `
   "-reporttypes:HtmlInline_AzurePipelines"
 
 ```
+
+- Remove code coverage: `rm -rf CodeCoverage/`
+
+- Extensions for Azure DevOps: https://marketplace.visualstudio.com/
+    + Code Coverage Widgets by Shane Davis
