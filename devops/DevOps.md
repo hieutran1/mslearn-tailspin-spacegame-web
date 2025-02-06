@@ -1,13 +1,27 @@
-# DevOps
+# Azure DevOps
 
-- 1. Get started with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
-- 2. Build applications with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
+- Learn cources:
+    - 1. Get started with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
+    - 2. Build applications with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
+
+    - 1. Create a build pipeline: https://learn.microsoft.com/en-us/training/modules/create-a-build-pipeline/?view=azure-devops
+    - 2. Implement a code workflow in your build pipeline by using Git and GitHub: 
+        + https://learn.microsoft.com/en-us/training/modules/implement-code-workflow/?view=azure-devops
+    - 3. Run quality tests in your build pipeline:
+        + https://learn.microsoft.com/en-us/training/modules/run-quality-tests-build-pipeline/?view=azure-devops
+    - 4. Manage build dependencies with Azure Artifacts:
+        + https://learn.microsoft.com/en-us/training/modules/manage-build-dependencies/?view=azure-devops
 
 - Code quality: automated testing
     + Run quality tests in build pipeline: https://learn.microsoft.com/en-us/training/modules/run-quality-tests-build-pipeline/
     + Run functional tests in Azure pipeline: https://learn.microsoft.com/en-us/training/modules/run-functional-tests-azure-pipelines
 
-## Pipeline
+- Azure pipeline:
+    + Build:
+    + Deploy:
+    + Artifacts:
+
+## Azure Pipeline
 
 1. Create multi stage pipeline
     - release approvals: combine approvals, conditions, and triggers
@@ -113,67 +127,74 @@ dotnet tool run reportgenerator `
     + Code Coverage Widgets by Shane Davis
 
 ## Manage build dependencies
-- https://learn.microsoft.com/en-us/training/modules/manage-build-dependencies
+- Learn: https://learn.microsoft.com/en-us/training/modules/manage-build-dependencies
+- Azure Artifacts: https://learn.microsoft.com/en-us/azure/devops/artifacts/?view=azure-devops
 
-1. How can I identify dependencies?
-    - Duplicate code.
-    - High cohesion and low coupling
-        + High cohesion: code in a single place.
-        + low coupling: separating unrelated parts of code base.
-    - Individual lifecycle
-    - Stable parts
-    - Independent code and components
-2. What kinds of packages are there?
-    - NuGet: packages .NET libraries. Zip format and **.nupkg** extension
-    - NPM: packages JavaScript libraries
-    - Maven: packages Java libraries
-    - Docker: packages software in isolated units called `containers`
-3. Where are packages hosted?
-    - NuGet Gallery: https://www.nuget.org/
-    - NPM: https://www.npmjs.com/
-    - Maven Central Repository: https://mvnrepository.com/
-    - Docker Hub: https://hub.docker.com/
+1. Concepts:
+    1. How can I identify dependencies?
+        - Duplicate code.
+        - High cohesion and low coupling
+            + High cohesion: code in a single place.
+            + low coupling: separating unrelated parts of code base.
+        - Individual lifecycle
+        - Stable parts
+        - Independent code and components
 
-    - **package feed**: package repository server. 
-        + Azure Artifacts and MyGet or file share: https://learn.microsoft.com/en-us/nuget/hosting-packages/overview
-4. What elements make up a good dependency management strategy?
-    - Standardization
-    - Packaging formats and sources
-    - Versioning
-5. How are packages versioned?
-    - Semantic Versioning: https://semver.org/
-        + format: __Major.Minor.Patch[-Suffix]__
-            - __Major__: breaking changes
-            - __Minor__: new features
-            - __Patch__: bug fixes
-            - __-Suffix__: pre-release version. Ex: 1.0.0-beta1
+    2. What kinds of packages are there?
+        - NuGet: packages .NET libraries. Zip format and **.nupkg** extension
+        - NPM: packages JavaScript libraries
+        - Maven: packages Java libraries
+        - Docker: packages software in isolated units called `containers`
 
-    - `Install-Package Newtonsoft.Json -Version 13.0.1`
-    - version: `[1.0,2.0)` --> greater than or equal to 1.0, and less than 2.0
-    - `.csproj`:
-        ```
-        <ItemGroup>
-            <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-        </ItemGroup>
-        ```
+    3. Where are packages hosted?
+        - NuGet Gallery: https://www.nuget.org/
+        - NPM: https://www.npmjs.com/
+        - Maven Central Repository: https://mvnrepository.com/
+        - Docker Hub: https://hub.docker.com/
 
-6. What is Azure Artifacts? 
-    - to host their .NET package
+        - **package feed**: package repository server. 
+            + Azure Artifacts and MyGet or file share: https://learn.microsoft.com/en-us/nuget/hosting-packages/overview
 
-7. Include a versioning strategy in your build pipeline
-    - Feeds has three view:
-        + Release: @release view, official releases.
-        + Prerelease:  @prerelease view, has '-Suffix'
-        + Local: @local view, has release and prerelease packages and upstream sources
-8. Package security in Azure Artifacts
-    - Feed permissions: Owners, Contributors, Collaborators, and Readers.
-    - Configure the pipeline to access security and license ratings
-        + tool: Build process -> scans packages and give feedback. CD process -> performance scans.
-        + use tools:  Mend Bolt and Black Duck
-            - Mend Bolt: https://www.mend.io/free-developer-tools/bolt/
-            - Black Duck: https://www.synopsys.com/software-integrity/security-testing/software-composition-analysis.html
+    4. What elements make up a good dependency management strategy?
+        - Standardization
+        - Packaging formats and sources
+        - Versioning
 
-9. Set up Azure Artifacts
+    5. How are packages versioned?
+        - Semantic Versioning: https://semver.org/
+            + format: __Major.Minor.Patch[-Suffix]__
+                - __Major__: breaking changes
+                - __Minor__: new features
+                - __Patch__: bug fixes
+                - __-Suffix__: pre-release version. Ex: 1.0.0-beta1
+
+        - `Install-Package Newtonsoft.Json -Version 13.0.1`
+        - version: `[1.0,2.0)` --> greater than or equal to 1.0, and less than 2.0
+        - `.csproj`:
+            ```
+            <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+            </ItemGroup>
+            ```
+
+    6. What is Azure Artifacts? 
+        - to host their .NET package
+
+    7. Include a versioning strategy in your build pipeline
+        - Feeds has three view:
+            + Release: @release view, official releases.
+            + Prerelease:  @prerelease view, has '-Suffix'
+            + Local: @local view, has release and prerelease packages and upstream sources
+
+    8. Package security in Azure Artifacts
+        - Feed permissions: Owners, Contributors, Collaborators, and Readers.
+        - Configure the pipeline to access security and license ratings
+            + tool: Build process -> scans packages and give feedback. CD process -> performance scans.
+            + use tools:  Mend Bolt and Black Duck
+                - Mend Bolt: https://www.mend.io/free-developer-tools/bolt/
+                - Black Duck: https://www.synopsys.com/software-integrity/security-testing/software-composition-analysis.html
+
+2. Set up Azure Artifacts
     1. Go to `Artifacts` tab, create feed name: `Tailspin.SpaceGame.Web.Models`
-    2. Create a pipeline for your package: Set permissions
-        - Users/Groups: `Space Game - web - Dependencies Build Service`, __Contributor__ role.
+    2. Set permissions for Pipeline: __Contributor__ role, allow pipeline to feed package to artifact.
+        - Users/Groups: search text `[project name] Build Service`, assign __Contributor__ role.
