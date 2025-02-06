@@ -17,9 +17,9 @@
     + Run functional tests in Azure pipeline: https://learn.microsoft.com/en-us/training/modules/run-functional-tests-azure-pipelines
 
 - Azure pipeline:
-    + Build:
-    + Deploy:
-    + Artifacts:
+    + Build: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/ci-build-git?view=azure-devops&tabs=yaml
+    + Deploy: https://learn.microsoft.com/en-us/azure/devops/pipelines/overview-azure?view=azure-devops
+    + Artifacts: https://learn.microsoft.com/en-us/azure/devops/pipelines/artifacts/artifacts-overview?view=azure-devops&tabs=nuget%2Cnugetserver
 
 ## Azure Pipeline
 

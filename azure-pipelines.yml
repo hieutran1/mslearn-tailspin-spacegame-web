@@ -24,9 +24,11 @@ steps:
     restoreKeys: |
        npm | "$(Agent.OS)"
     path: $(npm_config_cache)
+    cacheHitVar: CACHE_RESTORED
   displayName: Cache npm
 
 - script: npm ci
+  condition: ne(variables.CACHE_RESTORED, 'true')
 
 # - task: Npm@1
 #   displayName: "Run npm install"
