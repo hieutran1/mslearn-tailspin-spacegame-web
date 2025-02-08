@@ -14,18 +14,6 @@ variables:
 
 steps:
 
-# - task: Cache@2
-#   displayName: 'Cache NPM'
-#   inputs:
-#     key: 'npm | "$(Agent.OS)" | package-lock.json'
-#     restoreKeys: |
-#        npm | "$(Agent.OS)"
-#     path: $(npm_config_cache)
-#     cacheHitVar: CACHE_RESTORED
-
-# - script: 'npm ci'
-#   displayName: 'Install NPM dependencies'
-
 - task: Cache@2
   displayName: 'Cache NPM'
   inputs:
@@ -33,13 +21,26 @@ steps:
     restoreKeys: |
        npm | "$(Agent.OS)"
     path: $(npm_config_cache)
+    cacheHitVar: CACHE_RESTORED
 
-- task: Npm@1
-  displayName: 'Npm restore dependencies'
-  inputs:
-    command: 'custom'
-    verbose: true
-    customCommand: 'install --cache $(npm_config_cache)'
+- script: |
+    npm ci --config $(npm_config_cache) --loglevel verbose
+  displayName: 'Install NPM dependencies'
+
+# - task: Cache@2
+#   displayName: 'Cache NPM'
+#   inputs:
+#     key: 'npm | "$(Agent.OS)" | package-lock.json'
+#     restoreKeys: |
+#        npm | "$(Agent.OS)"
+#     path: $(npm_config_cache)
+
+# - task: Npm@1
+#   displayName: 'Npm restore dependencies'
+#   inputs:
+#     command: 'custom'
+#     verbose: true
+#     customCommand: 'install --cache $(npm_config_cache)'
 
 - script: "./node_modules/.bin/node-sass $(wwwrootDir) --output $(wwwrootDir)"
   displayName: "Compile Sass assets"
