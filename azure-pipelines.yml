@@ -24,7 +24,7 @@ steps:
     cacheHitVar: CACHE_RESTORED
 
 - script: |
-    npm ci --config $(npm_config_cache) --loglevel verbose --cache $(npm_config_cache) --prefer-offline
+    npm ci --loglevel verbose --cache $(npm_config_cache)
   displayName: 'Install NPM dependencies'
 
 # - task: Cache@2
