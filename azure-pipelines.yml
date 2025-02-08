@@ -27,21 +27,19 @@ steps:
 #   displayName: 'Install NPM dependencies'
 
 - task: Cache@2
-  displayName: 'Cache node_modules'
+  displayName: 'Cache NPM'
   inputs:
     key: 'npm | "$(Agent.OS)" | package-lock.json'
     restoreKeys: |
        npm | "$(Agent.OS)"
-    path: $(Build.SourcesDirectory)/node_modules
-    cacheHitVar: CACHE_RESTORED
+    path: $(npm_config_cache)
 
 - task: Npm@1
-  displayName: 'Install dependencies'
+  displayName: 'Npm restore dependencies'
   inputs:
-    command: custom
-    verbose: false
-    customCommand: 'ci'
-  condition: ne(variables.CACHE_RESTORED, 'true')
+    command: 'custom'
+    verbose: true
+    customCommand: 'install --cache $(npm_config_cache)'
 
 - script: "./node_modules/.bin/node-sass $(wwwrootDir) --output $(wwwrootDir)"
   displayName: "Compile Sass assets"
@@ -53,7 +51,7 @@ steps:
   displayName: "Write build info"
   workingDirectory: $(wwwrootDir)
 
-  
+
 - task: UseDotNet@2
   displayName: 'Use .NET SDK $(dotnetSdkVersion)'
   inputs:
