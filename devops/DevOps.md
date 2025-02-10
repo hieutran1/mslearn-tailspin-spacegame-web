@@ -89,7 +89,7 @@
         az group list --output table
         ```
 
-3. Git
+3. Git & dotnet cli
     ```
     git add azure-pipelines.yml
     git commit -m "Deploy to Staging"
@@ -105,6 +105,15 @@
 
     cd ~ --> move to Home folder
     code -r . --> open vscode
+    ```
+
+    ```
+    Trust local: 
+        dotnet dev-certs https --trust
+
+    Run local:
+        dotnet build --configuration Release
+        dotnet run --configuration Release --no-build --project Tailspin.SpaceGame.Web
     ```
 
 ## Testing
