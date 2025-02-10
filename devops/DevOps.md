@@ -1,8 +1,12 @@
 # Azure DevOps
 
-- Learn cources:
-    - 1. Get started with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
-    - 2. Build applications with Azure DevOps: https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
+- Azure DevOps: learning paths
+    - 1. Part 1: Get started with Azure DevOps
+        + https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
+    - 2. Part 2: Build applications with Azure DevOps
+        + https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
+    - 3. Part 3: Deploy applications with Azure DevOps: 
+        + https://learn.microsoft.com/en-us/training/paths/deploy-applications-with-azure-devops/
 
     - 1. Create a build pipeline: https://learn.microsoft.com/en-us/training/modules/create-a-build-pipeline/?view=azure-devops
     - 2. Implement a code workflow in your build pipeline by using Git and GitHub: 
@@ -12,6 +16,20 @@
     - 4. Manage build dependencies with Azure Artifacts:
         + https://learn.microsoft.com/en-us/training/modules/manage-build-dependencies/?view=azure-devops
 
+- Bicep: learning paths
+    1. Part 1: Fundamentals of Bicep: https://learn.microsoft.com/en-us/training/paths/fundamentals-bicep/
+    2. Part 2: Intermediate Bicep: https://learn.microsoft.com/en-us/training/paths/intermediate-bicep/
+    3. Part 3: Advanced Bicep: https://learn.microsoft.com/en-us/training/paths/advanced-bicep/
+
+    4. Adding Bicep code to a deployment pipeline:
+        1. Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
+            - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
+        2. Option 2: Deploy Azure resources by using Bicep and GitHub Actions
+            - https://learn.microsoft.com/en-us/training/paths/bicep-github-actions/
+
+- Terraform: learning paths
+    + https://learn.microsoft.com/en-us/training/paths/terraform-fundamentals/
+    
 - Code quality: automated testing
     + Run quality tests in build pipeline: https://learn.microsoft.com/en-us/training/modules/run-quality-tests-build-pipeline/
     + Run functional tests in Azure pipeline: https://learn.microsoft.com/en-us/training/modules/run-functional-tests-azure-pipelines
@@ -20,6 +38,8 @@
     + Build: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/ci-build-git?view=azure-devops&tabs=yaml
     + Deploy: https://learn.microsoft.com/en-us/azure/devops/pipelines/overview-azure?view=azure-devops
     + Artifacts: https://learn.microsoft.com/en-us/azure/devops/pipelines/artifacts/artifacts-overview?view=azure-devops&tabs=nuget%2Cnugetserver
+
+- Run a Template that sets up your Azure DevOps organization: https://azuredevopsdemogenerator.azurewebsites.net/environment/createproject
 
 ## Azure Pipeline
 
@@ -74,6 +94,17 @@
     git add azure-pipelines.yml
     git commit -m "Deploy to Staging"
     git push origin release
+    ```
+
+    ```
+    origin: fetch & push
+        git clone https://github.com/your-name/mslearn-tailspin-spacegame-web.git        
+    upstream: fetch & push
+        git remote add upstream https://github.com/MicrosoftDocs/mslearn-tailspin-spacegame-web.git
+    git remote -v
+
+    cd ~ --> move to Home folder
+    code -r . --> open vscode
     ```
 
 ## Testing
@@ -198,3 +229,18 @@ dotnet tool run reportgenerator `
     1. Go to `Artifacts` tab, create feed name: `Tailspin.SpaceGame.Web.Models`
     2. Set permissions for Pipeline: __Contributor__ role, allow pipeline to feed package to artifact.
         - Users/Groups: search text `[project name] Build Service`, assign __Contributor__ role.
+
+## Agile
+
+- Azure DevOps: a project, a team, a board
+    + Azure board: https://learn.microsoft.com/en-us/azure/devops/boards/?view=azure-devops
+    
+- sprints, work items
+
+- Agile approach to software development, processes: Basic, CMMI, Agile, and Scrum process.
+- Create project --> create work items --> associate work items with a sprint, or iteration
+
+- delivery plans, manage work schedules across multiple teams
+    + schedule milestone markers
+    + Backlog items on Agile process, issues on Basic process
+    + overall schedule
