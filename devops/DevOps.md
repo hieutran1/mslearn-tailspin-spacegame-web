@@ -89,13 +89,8 @@
         az group list --output table
         ```
 
-3. Git
-    ```
-    git add azure-pipelines.yml
-    git commit -m "Deploy to Staging"
-    git push origin release
-    ```
-
+3. Git & dotnet cli
+    
     ```
     origin: fetch & push
         git clone https://github.com/your-name/mslearn-tailspin-spacegame-web.git        
@@ -105,6 +100,28 @@
 
     cd ~ --> move to Home folder
     code -r . --> open vscode
+    ```
+
+    ```
+    Trust local: 
+        dotnet dev-certs https --trust
+
+    Run local:
+        dotnet build --configuration Release
+        dotnet run --configuration Release --no-build --project Tailspin.SpaceGame.Web
+
+    Push local branch:
+        git add .
+        git commit -m "Deploy to Staging"
+        git push origin feature/home-page-text
+
+    Synchronize any changes to the main branch:
+        git checkout main
+        git pull origin main
+
+        git checkout feature/home-page-text
+        git merge main
+
     ```
 
 ## Testing
