@@ -1,12 +1,14 @@
 # Azure DevOps
 
 - Azure DevOps: learning paths
-    - 1. Part 1: Get started with Azure DevOps
-        + https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
-    - 2. Part 2: Build applications with Azure DevOps
-        + https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
-    - 3. Part 3: Deploy applications with Azure DevOps: 
-        + https://learn.microsoft.com/en-us/training/paths/deploy-applications-with-azure-devops/
+    1. Azure DevOps enables you to build, test, and deploy any application to any cloud or on premises.
+        - Learn how to configure release pipelines that continuously build, test, and deploy your applications
+        - 1. Part 1: Get started with Azure DevOps
+            + https://learn.microsoft.com/en-us/training/paths/evolve-your-devops-practices/
+        - 2. Part 2: Build applications with Azure DevOps
+            + https://learn.microsoft.com/en-us/training/paths/build-applications-with-azure-devops/
+        - 3. Part 3: Deploy applications with Azure DevOps: 
+            + https://learn.microsoft.com/en-us/training/paths/deploy-applications-with-azure-devops/
 
     - 1. Create a build pipeline: https://learn.microsoft.com/en-us/training/modules/create-a-build-pipeline/?view=azure-devops
     - 2. Implement a code workflow in your build pipeline by using Git and GitHub: 
@@ -15,6 +17,29 @@
         + https://learn.microsoft.com/en-us/training/modules/run-quality-tests-build-pipeline/?view=azure-devops
     - 4. Manage build dependencies with Azure Artifacts:
         + https://learn.microsoft.com/en-us/training/modules/manage-build-dependencies/?view=azure-devops
+
+- Learning paths:
+    1. Architect modern applications in Azure
+        - https://learn.microsoft.com/en-us/training/paths/architect-modern-apps/
+        - Learn how to build modern applications using PaaS services for applications, caching, containers and Kubernetes in Azure
+        1. [Module] Build a containerized web application with Docker
+            - https://learn.microsoft.com/en-us/training/modules/intro-to-containers/
+
+    2. Deploy, manage, and monitor Windows containers on Azure Kubernetes Service
+        - https://learn.microsoft.com/en-us/training/paths/deploy-manage-monitor-wincontainers-aks/
+        - Learn how to deploy, manage, monitor, and operate Windows containers on Azure Kubernetes Service and AKS Hybrid by examining the core principles of Windows containers and Kubernetes.
+
+    3. Learn about the basics of Docker containers, container orchestration with Kubernetes, and managed clusters on Azure Kubernetes Service 
+        + 1. Part 1: Introduction to Kubernetes on Azure
+            - https://learn.microsoft.com/en-us/training/paths/intro-to-kubernetes-on-azure/
+        + 2. Part 2: Azure Kubernetes Service (AKS) cluster architecture and operations
+            - https://learn.microsoft.com/en-us/training/paths/aks-cluster-architecture/
+        + 3. Part 3: Azure Kubernetes Service (AKS) application and cluster scalability
+            - https://learn.microsoft.com/en-us/training/paths/aks-cluster-scalability/
+
+    4. Develop and deploy applications on Kubernetes
+        - https://learn.microsoft.com/en-us/training/paths/develop-deploy-applications-kubernetes/
+        - understand how to develop, build, deploy, and automatically maintain cloud native applications designed to work with Azure Kubernetes Service from the scratchpad to the deployment pipeline.
 
 - Bicep: learning paths
     1. Part 1: Fundamentals of Bicep: https://learn.microsoft.com/en-us/training/paths/fundamentals-bicep/
@@ -997,3 +1022,441 @@ dotnet run --configuration Release --no-build --project Tailspin.SpaceGame.Web
     - Different compute offerings that cover virtually every cloud scenario
         + Choose an Azure compute service for your application:
             - https://learn.microsoft.com/en-us/azure/architecture/guide/technology-choices/compute-decision-tree
+
+## Automate Docker container deployments with Azure Pipelines
+- Use Azure Pipelines to deploy `Docker containers` to `Azure App Service`
+
+- `Docker` is a technology for automating the packaging and deployment of portable, self-sufficient containers.
+- `Docker containers` can run anywhere a `Docker host` is found, whether on a development machine, a departmental server, an enterprise datacenter, or in the cloud.
+
+- A `container` application (container-based application) is one that's packaged and published as a single artifact that can be deployed with all of its dependencies to run in an isolated environment.
+- Modern solutions often require a combination of applications, services, and other components
+
+- Build a `Docker container`, publish the container to `Azure Container Registry`, and deploy the container to `App Service`.
+- Azure provides multiple ways to run container-based applications, including `App Service` or as part of clusters managed with `orchestration technologies` like `Kubernetes`.
+
+- Team concerns:
+    + 1. Dependency versioning challenges for QA
+        - Applications are packaged as containers that bring the correct versions of their dependencies with them.
+
+    + 2. Overhead due to solving app isolation with VMs
+        - Many isolated containers can run on the same host with benefits over virtual machines including faster startup time to greater resource efficiency.
+
+    + 3. Configuration inconsistencies between DevOps stages
+        - Containers ship with manifests that automate configuration requirements, such as which ports need to be exposed.
+
+### Set up your Azure DevOps environment
+1. Add a user to Azure DevOps: if different one sign in to Azure. `Basic access level`.
+2. Get the Azure DevOps project: DevOps and GitHub  
+3. Move the work item to Doing
+
+4. Create the Azure App Service environment
+    1. Launch Cloud Shell in Azure portal
+    2. Select an Azure region
+        - A **region** is one or more Azure datacenters located within a particular geographic location.
+            + eastasia, East US, West US, and North Europe
+
+        - Set default region for Azure CLI:
+            ```
+            az account list-locations --query "[].{Name: name, DisplayName: displayName}" --output table
+
+            az configure --defaults location=<REGION>
+            ```
+
+    3. Create Bash variables
+        ```Bash
+        resourceSuffix="001"  # $RANDOM
+
+        webName="tailspin-space-game-web-${resourceSuffix}"
+        registryName="tailspinspacegame${resourceSuffix}"
+
+        rgName='tailspin-space-game-rg'
+        planName='tailspin-space-game-asp'
+        ```
+
+    4. Create the Azure resources
+        1. create a **resource group**: `az group create --name $rgName`
+            ```
+            az group list --output table
+            az group delete --name $rgName
+            ```
+
+        2. create an **Azure Container Registry**
+            ```Azure CLI
+            az acr create --name $registryName --resource-group $rgName --sku Basic --admin-enabled true
+
+                --sku: Basic, Premium, Standard
+                sku: Stock Keeping Unit
+            ```
+
+        3. create an **App Service plan**
+            ```
+            az appservice plan create --name $planName --resource-group $rgName --sku F1 --is-linux
+
+                --sku: F1 free, B1 basic ($0.02)
+                --is-linux: Linux workers
+            ```
+
+        4. create the **App Service instance**
+            ```
+            az webapp create --name $webName --resource-group $rgName --plan $planName --deployment-container-image-name $registryName.azurecr.io/web:latest
+            ```
+
+        5. list the host name and state of the **App Service instance**
+            ```
+            az webapp list --resource-group $rgName --query "[].{hostName: defaultHostName, state: state}" --output table
+
+                --> tailspin-space-game-web-001.azurewebsites.net
+            ```
+
+        6. list the login server of the **Azure Container Registry instance**
+            ```
+            az acr list --resource-group $rgName --query "[].{loginServer: loginServer}" --output table
+
+                --> tailspinspacegame001.azurecr.io
+            ```
+            - need this server name when creating pipeline variables.
+
+5. Create pipeline variables in Azure Pipelines
+    1. *Project* --> *Pipelines* --> *Library* --> "+ Variable group": named **Release** with variables:
+        - WebAppName: **tailspin-space-game-web-001**
+        - RegistryName: **tailspinspacegame001.azurecr.io**
+            + Azure Container Registry login server
+
+    2. Select **Pipeline permissions**, and then select the **+** sign to add a pipeline.
+        - Select **mslearn-tailspin-spacegame-web-docker** to give your pipeline permission to access the **variable group**.
+
+6. Create required service connections: *two service connection*
+    - enables Azure Pipelines to access your Azure subscription.
+        + Azure Pipelines uses this service connection to deploy the website to App Service.
+    - create a **Docker Registry connection** to publish your container to the **Azure Container Registry**.
+
+    - Create two service connections: from **Project settings** --> Pipelines --> **Service connections**
+        1. New service connection: named **Resource Manager - Tailspin - Space Game**
+            - choose **Azure Resource Manager**
+            - **Service principal (automatic)**
+
+            - Scope level: Subscription
+            - Subscription: Your Azure subscription
+            - Resource Group: "tailspin-space-game-rg"
+            - Service connection name: "Resource Manager - Tailspin - Space Game"
+
+            - select **Grant access permission to all pipelines**
+
+        2. New service connection: named **Container Registry Connection**
+            - choose **Docker Registry**
+            - select **Azure Container Registry**
+            - select **Service principal**
+
+            - Subscription: Your Azure subscription
+            - Azure container registry: Select the one you created earlier
+            - Service connection name: "Container Registry Connection"
+
+            - select **Grant access permission to all pipelines**
+
+### Deploy a Docker container to Azure
+1. Define variables to be shared within the pipeline: file **azure-pipelines.yml**
+    ```
+    variables:
+        buildConfiguration: 'Release'
+        webRepository: 'web'
+        tag: '$(Build.BuildId)'
+    ```
+2. Replace the **build stage tasks**
+    1. **Docker task**: https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/build/docker
+        - **command**: Specifies the Docker command to run.
+            + "buildAndPush", "build", "push"
+
+        - **buildContext**: Specifies the path to the build context.
+            + "$(Build.Repository.LocalPath)"
+
+        - **repository**: Specifies the name of the repository.
+            + "$(webRepository)"
+
+        - **dockerfile**: Specifies the path to the Dockerfile.
+            + '$(Build.SourcesDirectory)/Tailspin.SpaceGame.Web/Dockerfile'
+
+        - **containerRegistry**: Specifies the name of the Docker registry service connection.
+            + 'Container Registry Connection'
+
+        - **tags**: Specifies a list of tags on separate lines. 
+            + These tags are used in build, push, and buildAndPush commands
+            + $(tag)
+
+3. Replace the **deploy stage task**
+    1. **Azure Web App for Container task**: https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/azure-rm-web-app-containers
+        - **appName**: Specifies the name of an existing Azure App Service.
+        - **azureSubscription**: Specifies the name of the Azure Resource Manager subscription for the deployment.
+            + 'Resource Manager - Tailspin - Space Game'
+        - **imageName**: Specifies the fully qualified container image name.
+            + Ex: myregistry.azurecr.io/nginx:latest or python:3.7.2-alpine/
+            + $(RegistryName)/$(webRepository):$(build.buildId)
+
+### Learn More
+- fundamentals of Docker containers: 
+    + Introduction to Docker containers: https://learn.microsoft.com/en-us/training/modules/intro-to-docker-containers/
+- packaging web apps so that they can be deployed as Docker images
+    + Build a containerized web application with Docker: 
+        - https://learn.microsoft.com/en-us/training/modules/intro-to-containers/
+-  running containerized apps using Docker containers with Azure Container Instances (ACI)
+    + Run Docker containers with Azure Container Instances
+        - https://learn.microsoft.com/en-us/training/modules/run-docker-with-azure-container-instances/
+
+## Automate multi-container Kubernetes deployments with Azure Pipelines
+- Deploy multiple containers to an Azure Kubernetes Service cluster with Azure Pipelines
+- A microservice is a small, independent service designed to be self-contained and fulfill a specific business capability.
+- Containers provide an excellent technical foundation for building and deploying these services.
+- Kubernetes is a platform designed to manage containerized workloads and services.
+
+- **Docker** is a container packaging technology. **Kubernetes** is designed to orchestrate containers.
+- **Docker manifests** define how the applications they host are exposed while **Kubernetes manifests** define how the containers they manage are exposed.
+
+- What is Kubernetes?
+    + Kubernetes is an open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications. 
+    + It provides a framework for running distributed systems in a declarative, responsive fashion and can run containers across multiple hosts, providing efficient use of resources and increased reliability.
+
+- We can *integrate testing*, define *multiple stages*, and perform other tasks just like you would for your existing applications.
+- **multiple stages** dev, test, and staging: use K8S namespace
+
+- Prerequisites:
+    + Administer containers in Azure learning path: https://learn.microsoft.com/en-us/training/paths/administer-containers-in-azure/
+
+1. Set up your Azure DevOps environment
+    1. Create the Azure Kubernetes Service environment
+        1. list the regions: `az account list-locations --query "[].{Name: name, DisplayName: displayName}" --output table`
+        2. set your default region: `az configure --defaults location=<REGION>`, ex: eastasia, westus2
+
+        3. Create Bash variables
+            ```Bash
+            resourceSuffix='001'   # $RANDOM
+
+            registryName="tailspinspacegame${resourceSuffix}"
+            aksName="tailspinspacegame-${resourceSuffix}"
+
+            rgName='tailspin-space-game-rg'
+            ```
+
+        4. Create Azure resources
+            1. create a resource group: `az group create --name $rgName`
+            2. create an Azure Container Registry
+                ```
+                az acr create --name $registryName --resource-group $rgName --sku Basic
+                    --sku: Basic, Standard, Premium
+                ```
+
+            3. create an **AKS instance**
+                ```
+                az aks create --name $aksName --resource-group $rgName --tier free --enable-addons monitoring --kubernetes-version <latest-AKS-version> --generate-ssh-keys
+
+                az aks create --name $aksName --resource-group $rgName --tier free --enable-addons monitoring --kubernetes-version 1.31.5 --generate-ssh-keys
+
+                    enable cost analysis:
+                        az aks update --resource-group 'tailspin-space-game-rg' --name 'tailspinspacegame-001' --enable-cost-analysis
+
+                    --tier: free, standard (default), premium
+                        + free tier: pricing VM of node, network, storage
+
+                    --attach-acr: Grant the 'acrpull' role assignment to the ACR specified by name or resource ID.
+                    --storage-pool-sku: set azure disk type storage pool sku for azure container storage
+                        Azure Disks: Premium_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS, Premium_ZRS, PremiumV2_LRS, StandardSSD_ZRS
+                        Elastic SAN: Premium_LRS (default), Premium_ZRS
+                    --node-osdisk-size: ize in GiB of the OS disk for each node in the node pool. Minimum 30 GiB.
+
+                    --enable-addons (-a): Enable the Kubernetes addons in a comma-separated list
+                        --> http_application_routing: configure ingress with automatic public DNS name creation.
+                        --> monitoring: turn on Log Analytics monitoring. Uses the Log Analytics Default Workspace if it exists, else creates one.
+
+                    --vm-set-type: Agent pool vm set type. VirtualMachineScaleSets (default) or AvailabilitySet
+                    --node-vm-size (-s): Size of Virtual Machines to create as Kubernetes nodes.
+                    --> VM node: DS1_v2 ($78/month)
+                    --node-vm-size VMSize
+                    Dev/Test: 
+                        --node-vm-size: Standard_DS2_v2
+                ```
+
+                1. Find the latest AKS version: **latest-AKS-version**
+                    ```
+                    az aks get-versions --location eastasia --output table
+                        --> 1.31.5
+                    ```
+                2. AKS pricing:
+                    - Tier free: pay __virtual machine instances__, __storage__, and __networking__ resources.
+
+            4. Create a variable to store the ID of the service principal configured for the AKS instance
+                ```Azure CLI
+                clientId=$(az aks show --resource-group $rgName --name $aksName --query "identityProfile.kubeletidentity.clientId" --output tsv)
+                ```
+
+            5. Create a variable to store the ID of the Azure Container Registry
+                ```Azure CLI
+                acrId=$(az acr show --name $registryName --resource-group $rgName --query "id" --output tsv)
+                ```
+
+            6. create a role assignment **to authorize the AKS cluster to connect to the Azure Container Registry**
+                ``` Error (notice...)
+                az role assignment create --assignee $clientId --role AcrPull --scope "$acrId"
+                ```
+            
+            7. retrieve the login server URL for your Azure Container Registry (ACR) instance
+                ```
+                az acr list --resource-group $rgName --query "[].{loginServer: loginServer}" --output table
+
+                    --> Note: tailspinspacegame001.azurecr.io
+                ```
+
+    2. Create a variable group in Pipeline: named "Release"
+        - Project --> Pipelines --> Library --> Variable groups
+        - Variables:
+            + RegistryName: **tailspinspacegame001.azurecr.io**
+
+    3. Create service connections in Pipeline
+        - allow Azure Pipelines to access your Azure Container Registry and Azure Kubernetes Service instances.
+            + Azure Pipelines can push your containers and instruct your AKS cluster to pull them in to update the deployed service.
+
+        1. Create a Docker Registry service connection: to allow Azure Pipelines to access your **Azure Container Registry**
+            - Project settings -> Service connections -> Pipelines 
+            - select **Docker Registry** --> select **Azure Container Registry** --> select **Service Principal** for authentication type
+
+            - settings: 
+                + Subscription: Your Azure subscription
+                + Azure container registry: Select the one you created earlier
+                + Service connection name: **Container Registry Connection**
+            
+            - select **Grant access permission to all pipelines**
+
+        2. Create ARM service connection: to allow Azure Pipelines to access your **Azure Kubernetes Service instances**
+            - to authenticate with your AKS cluster. 
+                + Using an ARM service connection instead of Kubernetes because long-lived tokens are no longer created by default since Kubernetes 1.24.
+            - select **Azure Resource Manager**
+            - Select **Service Principal (automatic)**
+            - Select **Subscription** for scope level
+
+            - settings:
+                + Subscription: Your Azure subscription
+                + Resource group: Select the one you created earlier
+                + Service connection name: **Kubernetes Cluster Connection**
+
+            - select **Grant access permission to all pipelinesa**
+
+        3. Create a pipeline environment: named *Dev*
+
+    4. Update the Kubernetes deployment manifest
+        - update the Kubernetes manifest **deployment.yml** to point to the **container registry**.
+        1. Open the **manifests/deployment.yml** file, update field **image: ACR login server**
+            - image: tailspinspacegame001.azurecr.io/web
+
+2. Deploy a multi-container solution to a Kubernetes cluster
+    1. Update the pipeline to support triggers: trigger when commit to main branch
+    2. Define variables accessible across pipeline
+        ```
+        variables:
+            buildConfiguration: 'Release'
+            leaderboardRepository: 'leaderboard'
+            webRepository: 'web'
+            tag: '$(Build.BuildId)'
+            imagePullSecret: 'secret'
+        ```
+    3. Build and publish Docker image to Azure Container Registry
+        - **Docker@2** task
+            ```
+            - task: Docker@2
+              displayName: 'Build and push the leaderboard image to container registry'
+              inputs:
+                  command: buildAndPush
+                  buildContext: $(Build.Repository.LocalPath)
+                  repository: $(leaderboardRepository)
+                  dockerfile: '$(Build.SourcesDirectory)/Tailspin.SpaceGame.LeaderboardContainer/Dockerfile'
+                  containerRegistry: 'Container Registry Connection'
+                  tags: |
+                  $(tag)
+            ```
+
+    4. Publish the Kubernetes manifests
+        - **PublishBuildArtifacts@1** task, shortcut **publish**
+            ```
+            - publish: '$(Build.SourcesDirectory)/manifests'
+              artifact: manifests
+            ```
+
+    5. Replace the deploy stage: **Dev** environment
+        - environment: 'Dev'
+        - **DownloadBuildArtifacts@0** task, shortcut **download**
+            ```
+            steps:
+                - download: current
+                  artifact: manifests
+            ```
+
+    6. Kubernetes manifest task
+        - https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/kubernetes-manifest-v1
+        - **KubernetesManifest@0** task: it supports multiple action options that range from **creating secrets** to **deploying images**.
+        -  Params:
+            + **action**: indicates the feature to run. In this case, createSecret creates the shared secret.
+            + **connectionType**: specifies the type of service connection to use. Options: **azureResourceManager** or **kubernetesServiceConnection**.
+            + **secretName**: specifies the name of the secret to create.
+            + **dockerRegistryEndpoint**: specifies the name of the Azure Container Registry Services connection.
+            + **azureSubscriptionConnection**: specifies the name of the ARM Services connection.
+            + **azureResourceGroup**: specifies the name of your resource group.
+            + **kubernetesCluster**: specifies the name of your AKS cluster.
+            + **namespace**: specifies the Kubernetes namespace this action applies to.
+
+            + **imagePullSecrets**: specifies the list of secrets needed to pull from the container registry.
+            + **containers**: specifies the list of container images to deploy.
+
+        1. Create an image pull secret that will be shared between our ACR and AKS instances
+            ```
+            - task: KubernetesManifest@1
+              displayName: Create imagePullSecret
+              inputs:
+                  action: createSecret
+                  connectionType: azureResourceManager
+                  secretName: $(imagePullSecret)
+                  dockerRegistryEndpoint: 'Container Registry Connection'
+                  azureSubscriptionConnection: 'Kubernetes Cluster Connection'
+                  azureResourceGroup: 'tailspin-space-game-rg'
+                  kubernetesCluster: 'tailspinspacegame-001'
+                  namespace: 'default'
+            ```
+
+        2. Deploy image
+            ```
+            - task: KubernetesManifest@1
+              displayName: Deploy to Kubernetes cluster
+              inputs:
+                action: deploy
+                connectionType: azureResourceManager
+                azureSubscriptionConnection: 'Kubernetes Cluster Connection'
+                azureResourceGroup: 'tailspin-space-game-rg'
+                kubernetesCluster: 'tailspinspacegame-24591'
+                namespace: 'default'
+                manifests: |
+                  $(Pipeline.Workspace)/manifests/deployment.yml
+                  $(Pipeline.Workspace)/manifests/service.yml
+                imagePullSecrets: |
+                  $(imagePullSecret)
+                containers: |
+                  $(RegistryName)/$(webRepository):$(tag)
+                  $(RegistryName)/$(leaderboardRepository):$(tag)
+            ```
+          
+    7. Run your pipeline
+        1. From pipeline, Select **Environments** --> select **Dev** environment
+        2. From Azure Portal, select your **AKS cluster**, and then select **Services and ingresses**
+            - Select the **External IP** for Web and leaderboard services
+            - Test leaderboard: *http://[IP]/api/Leaderboard?pageSize=10*
+
+3. Learn More:
+    - Building microservice solutions on Azure: https://learn.microsoft.com/en-us/azure/architecture/microservices/
+    - Decompose a monolithic application into a microservices architecture: 
+        + https://learn.microsoft.com/en-us/training/modules/microservices-architecture/
+
+    - Administer containers in Azure learning path: https://learn.microsoft.com/en-us/training/paths/administer-containers-in-azure/
+        + Azure Container Instances and App Service
+
+## Learning path summary: deploying applications by using Azure Pipelines
+- Building a basic release pipeline that deploys a web application to App Service.
+- Expanding your basic release pipeline to a multistage pipeline that deploys to various development, test, and staging environments.
+- Running both functional and nonfunctional tests in the pipeline.
+- Implementing a blue-green deployment that updates the application and requires minimal downtime.
+- Extending pipelines to add support for different deployment targets, such as Azure Functions and Kubernetes.
+
