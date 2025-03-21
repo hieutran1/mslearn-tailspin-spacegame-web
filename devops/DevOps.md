@@ -46,6 +46,8 @@
     2. Part 2: Intermediate Bicep: https://learn.microsoft.com/en-us/training/paths/intermediate-bicep/
     3. Part 3: Advanced Bicep: https://learn.microsoft.com/en-us/training/paths/advanced-bicep/
 
+    - After that, you might be interested in adding your Bicep code to a deployment pipeline.
+        + Take one of these two learning paths based on the tool you want to use:
     4. Adding Bicep code to a deployment pipeline:
         1. Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
             - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/

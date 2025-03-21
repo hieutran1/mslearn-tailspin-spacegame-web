@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contoso-ship-manager-frontend
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contoso-ship-manager-frontend
+  template:
+    metadata:
+      labels:
+        app: contoso-ship-manager-frontend
+    spec:
+      containers:
+        - image: mcr.microsoft.com/mslearn/samples/contoso-ship-manager:frontend
+          name: contoso-ship-manager-frontend
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /usr/src/app/dist/config.js
+              subPath: config.js
+      volumes:
+        - name: config
+          configMap:
+            name: ship-manager-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contoso-ship-manager-frontend
+  namespace: default
+spec:
+  selector:
+    app: contoso-ship-manager-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: contoso-ship-manager-frontend
+  namespace: default
+  annotations:
+    spec.ingressClassName: webapprouting.kubernetes.azure.com
+spec:
+  rules:
+    - host: contoso-ship-manager.{your-dns-zone}.aksapp.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: contoso-ship-manager-frontend
+                port: 
+                  name: http

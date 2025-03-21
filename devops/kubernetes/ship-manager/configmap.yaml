@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ship-manager-config
+  namespace: default
+data:
+  config.js: |
+    const config = (() => {
+      return {
+        'VUE_APP_BACKEND_BASE_URL': 'http://ship-manager-backend.{your-dns-zone}.aksapp.io',
+      }
+    })()
