@@ -1,0 +1,27 @@
+trigger:
+    batch: true
+    branches:
+      include:
+        - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - name: deploymentDefaultLocation
+    value: eastasia
+
+jobs:
+  - job:
+    steps:
+      - task: AzureResourceManagerTemplateDeployment@3
+        inputs:
+          connectedServiceName: $(ServiceConnectionName)
+          deploymentName: $(Build.BuildNumber)
+          location: $(deploymentDefaultLocation)
+          resourceGroupName: $(ResourceGroupName)
+          csmFile: deploy/main.bicep
+          overrideParameters: >
+            -environmentType $(EnvironmentType)
+            -deployToyManualsStorageAccount $(DeployToyManualsStorageAccount)
+          

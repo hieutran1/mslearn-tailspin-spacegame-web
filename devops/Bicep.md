@@ -11,6 +11,8 @@
     2. Option 2: Deploy Azure resources by using Bicep and GitHub Actions
         - https://learn.microsoft.com/en-us/training/paths/bicep-github-actions/
 
+# Part 1: Fundamentals of Bicep: https://learn.microsoft.com/en-us/training/paths/fundamentals-bicep/
+
 ## Introduction to infrastructure as code using Bicep
 - https://learn.microsoft.com/en-us/training/modules/introduction-to-infrastructure-as-code-using-bicep
 
@@ -202,7 +204,7 @@
             ```yml
             resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
               name: 'toylaunchstorage'
-              location: 'westus3'
+              location: 'eastasia'
               sku: {
                 name: 'Standard_LRS'
               }
@@ -233,7 +235,7 @@
           ```yml
           resource appServicePlan 'Microsoft.Web/serverFarms@2023-12-01' = {
             name: 'toy-product-launch-plan'
-            location: 'westus3'
+            location: 'eastasia'
             sku: {
               name: 'F1'
             }
@@ -248,7 +250,7 @@
           ```yml
           resource appServiceApp 'Microsoft.Web/sites@2023-12-01' = {
             name: 'toy-product-launch-1'
-            location: 'westus3'
+            location: 'eastasia'
             properties: {
               serverFarmId: appServicePlan.id
               httpsOnly: true
@@ -1008,12 +1010,626 @@
                 - Notice that there's an output called **appServiceAppHostName** with the host name of your App Service app.
 
 9. Summary
-- You created a Bicep template to deploy a basic storage account, an Azure App Service plan, and an application. 
-  + You parameterized the template to make it useful for future products. 
-  + You then refactored it into modules to make the template more reusable, and easier to understand and work with.
-  + Finally, you added an output to send information from a template deployment back to the person or tool executing the deployment.
+    - You created a Bicep template to deploy a basic storage account, an Azure App Service plan, and an application. 
+      + You parameterized the template to make it useful for future products. 
+      + You then refactored it into modules to make the template more reusable, and easier to understand and work with.
+      + Finally, you added an output to send information from a template deployment back to the person or tool executing the deployment.
 
-- References:
-    + Bicep documentation: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep
-    + Template reference for each Azure resource type: https://learn.microsoft.com/en-us/azure/templates/
-    + Bicep functions: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/bicep-functions
+    - References:
+        + Bicep documentation: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep
+        + Template reference for each Azure resource type: https://learn.microsoft.com/en-us/azure/templates/
+        + Bicep functions: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/bicep-functions
+
+# Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
+- https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
+
+## Build your first Bicep deployment pipeline by using Azure Pipelines
+- https://learn.microsoft.com/en-us/training/modules/build-first-bicep-deployment-pipeline-using-azure-pipelines/
+
+1. Introduction
+    1. Example scenario
+    2. What is the main goal?
+        - use Azure Pipelines to create a pipeline that deploys a basic Bicep file to an Azure resource group.
+
+2. Understand Azure Pipelines
+    - Azure Pipelines is a feature of the Azure DevOps service. 
+      + Azure DevOps also includes Azure Repos, which hosts the Git repositories you use to store and share your code with your collaborators.
+      + When you store your Bicep code in Git, Azure Pipelines can access your code to automate your deployment processes.
+
+    1. What is a pipeline?
+        - A pipeline is the repeatable process that you use to test and deploy your code defined in a configuration file.
+          + A pipeline includes all the steps you want to execute and in what order.
+
+    2. Agents and pools
+        - An **agent** is a computer that's configured to run deployment steps for a pipeline.
+          + The agents sometimes are called Microsoft-hosted agents or hosted agents because they're hosted on your behalf
+          + When your pipeline runs, a hosted agent is automatically created. 
+            - When your pipeline is finished running, the hosted agent is automatically deleted. 
+            - You can't access hosted agents directly, so it's important that your pipeline contains all the steps necessary to deploy your solution.
+
+        - An **agent pool** contains multiple agents of the same type.
+          + When you create your pipeline, you tell Azure Pipelines which agent pool to use to execute each set of steps. 
+          + When your pipeline runs, it waits for an agent from the pool to become available, and then it instructs the agent to run your deployment steps.
+
+        - NOTE: You have the option to create a custom agent that's called a self-hosted agent.
+          + You might create a **self-hosted agent** if you have specific software that you need to run as part of your pipeline or if you need to control precisely how the agent is configured.
+
+    3. Triggers
+        - To instruct Azure Pipelines when to run your pipeline, you create a trigger.
+
+    4. Steps
+        - A **step** represents a single operation that the pipeline performs. 
+          + A step is similar to an individual command that you run in Bash or PowerShell. 
+          + For most deployments, you execute several steps in a sequence. 
+          + You define the sequence and all the details of each step in your pipeline YAML file.
+
+        - Azure Pipelines offers two types of steps:
+          + 1. Scripts: 
+            - Use a script step to run a single command or a sequence of commands in Bash, PowerShell, or the Windows command shell.
+
+          + 2. Tasks
+            - A task is a convenient way to access many different capabilities without writing script statements. 
+            - For example, a built-in task can run the Azure CLI and Azure PowerShell cmdlets to test your code or upload files to an FTP server.
+              + Anyone can write a task and share it with other users by publishing the task in the Visual Studio Marketplace. 
+              + A large set of commercial and open-source tasks are available.
+
+    5. Jobs
+        - In Azure Pipelines, a job represents an ordered set of steps. 
+          + You always have at least one job in a pipeline, and when you create complex deployments, it's common to have more than one job.
+
+        - NOTE: You can set each job to run on a different agent pool. 
+          + Running jobs on different agent pools is useful when you build and deploy solutions that need to use different operating systems in different parts of the job pipeline.
+
+          + For example, suppose you're building an iOS app and the app's back-end service.
+            - You might have one job that runs on a macOS agent pool to build the iOS app and another job that runs on an Ubuntu or Windows agent pool to build the back end. 
+            - You might even tell the pipeline to run the two jobs simultaneously, which speeds up your pipeline's execution.
+
+        - NOTE: You also can use **stages** in Azure Pipelines to divide your pipeline into logical phases and add manual checks at various points in your pipeline's execution. 
+
+    6. Basic pipeline example
+        ```yaml
+        trigger: none
+
+        pool:
+          vmImage: ubuntu-latest
+
+        jobs:
+        - job:
+          steps:
+          - script: echo Hello, world!
+            displayName: 'Run a one-line script'
+          
+          - script: |
+              echo We'll add more steps soon.
+              echo For example, we'll add our Bicep deployment step.
+            displayName: 'Run a multi-line script'
+        ```
+        - **trigger**: tells your pipeline when to execute. 
+          + In this case, trigger: none tells Azure Pipelines that you want to manually trigger the pipeline.
+        
+        - **pool**: instructs the pipeline which agent pool to use when it runs the pipeline steps. 
+          + In this example, the pipeline runs on an agent running the Ubuntu operating system, which comes from the pool of Microsoft-hosted agents.
+
+        - **jobs**: groups together all the jobs in your pipeline.
+        - **job**: tells your pipeline that you have a single job.
+          + TIP: When you have only one job in your pipeline, you can omit the **jobs** and **job** keywords.
+
+        - **steps**: lists the sequence of actions to run in the job.
+          + To create a multi-line script step, use the pipe character (**|**) as shown in the example
+
+3. Exercise - Create and run a basic pipeline
+    1. Create a project in Azure DevOps
+        - Go to dev.azure.com, create a project:
+          + Project name: *toy-website*
+          + Description: *Toy company website*
+          + Visibility: create public and private repositories. 
+            - You can grant access to other users later.
+
+    2. Clone the repository
+    3. Install the Azure Pipelines extension: *Azure Pipelines*
+    4. Create a YAML pipeline definition
+        1. From *TOY-WEBSITE* project, create *deploy/azure-pipelines.yml*
+            ```yaml
+            trigger: none
+
+            pool:
+              vmImage: ubuntu-latest
+
+            jobs:
+            - job:
+              steps:
+              - script: echo Hello world!
+                displayName: 'Placeholder step'
+            ```
+        2. Commit the changes
+            ```
+            git add deploy/azure-pipelines.yml
+            git commit -m "Add initial pipeline definition"
+            git push
+            ```
+
+    5. Set up the pipeline in Azure Pipelines
+        1. In the resource menu of your Azure DevOps session, select **Pipelines**, and in the **Create your first Pipeline** pane, select **Create Pipeline**.
+        2. On the **Connect** tab's **Where is your code?** pane, select **Azure Repos Git**.
+        3. On the **Select** tab's **Select a repository** pane, select **toy-website**
+        4. On the **Configure** tab's **Configure your pipeline** pane, select **Existing Azure Pipelines YAML file**.
+        5. On the **Select an existing YAML file** pane's **Path** dropdown, select **/deploy/azure-pipelines.yml**, and then select **Continue**.
+            - TIP: The Azure Pipelines web interface provides an editor that you can use to manage your pipeline definition. 
+              + In this module, you work with the definition file in Visual Studio Code, but you can explore the Azure Pipelines editor to see how it works.
+        
+        6. select **Run**
+
+    6. Verify the pipeline run
+        - IMPORTANT: 
+          + If this is your first time using pipelines in this Azure DevOps organization, you might see an error saying:
+            ```
+            No hosted parallelism has been purchased or granted.
+            ```
+
+          + To request that your Azure DevOps organization be granted access to free pipeline agents, complete this form.
+            - https://aka.ms/azpipelines-parallelism-request
+
+        1. Select the **Checkout toy-website@main to s**.
+            - the repository's contents were downloaded from Azure Repos to the agent's file system.
+            - You don't have direct access to the agent that ran your steps.
+
+    7. Link pipeline execution to a commit
+        1. In the DevOps resource menu, select **Repos > Commits**
+
+4. Deploy Bicep files by using a pipeline
+    1. Service connections
+    2. Deploy a Bicep file by using the Azure Resource Group Deployment task
+        ```yaml
+        - task: AzureResourceManagerTemplateDeployment@3
+          inputs:
+            connectedServiceName: 'MyServiceConnection'
+            location: 'eastasia'
+            resourceGroupName: Example
+            csmFile: deploy/main.bicep
+            overrideParameters: >
+                -parameterName parameterValue
+        ```
+
+    3. Run Azure CLI and Azure PowerShell commands
+    4. Variables
+        1. Create a variable
+        2. Use a variable in your pipeline
+            ```yaml
+            - task: AzureResourceManagerTemplateDeployment@3
+              inputs:
+                connectedServiceName: $(ServiceConnectionName)
+                location: $(DeploymentDefaultLocation)
+                resourceGroupName: $(ResourceGroupName)
+                csmFile: deploy/main.bicep
+                overrideParameters: >
+                  -environmentType $(EnvironmentType)
+            ```
+        3. System variables
+            - **Build.BuildNumber**
+                + is the unique identifier for your pipeline run. 
+                + Despite its name, the Build.BuildNumber value often is a string, and not a number. 
+                + You might use this variable to name your Azure deployment, so you can track the deployment back to the specific pipeline run that triggered it.
+
+            - **Agent.BuildDirectory**:
+                + is the path on your agent machine's file system where your pipeline run's files are stored.
+                + This information can be useful when you want to reference files on the build agent.
+           
+        4. Create variables in your pipeline's YAML file
+            ```yaml
+            trigger: none
+
+            pool:
+              vmImage: ubuntu-latest
+
+            variables:
+              ServiceConnectionName: 'MyServiceConnection'
+              EnvironmentType: 'Test'
+              ResourceGroupName: 'MyResourceGroup'
+              DeploymentDefaultLocation: 'eastasia'
+
+            jobs:
+            - job:
+              steps:
+              - task: AzureResourceManagerTemplateDeployment@3
+                inputs:
+                  connectedServiceName: $(ServiceConnectionName)
+                  location: $(DeploymentDefaultLocation)
+                  resourceGroupName: $(ResourceGroupName)
+                  csmFile: deploy/main.bicep
+                  overrideParameters: >
+                    -environmentType $(EnvironmentType)
+            ```
+
+5. Exercise - Create a service connection
+    1. Sign in to Azure
+        - To work with service principals in Azure, sign in to your Azure account from the Visual Studio Code terminal.
+
+        1. Sign in to Azure by using the Azure CLI: 
+            ```Azure CLI
+            az login
+            ```
+
+    2. Create a resource group in Azure
+        ```Azure CLI
+        az group create --name ToyWebsite --location eastasia
+        ```
+
+    3. Create a service connection in Azure Pipelines
+        - This process automatically creates a service principal in Azure. 
+          + It also grants the service principal the Contributor role on your resource group, which allows your pipeline to deploy to the resource group.
+
+        1. Select **Project settings**
+        2. Select **Service connections** > **Create service connection**
+        3. Select **Azure Resource Manager** > **Next**
+        4. Select **Service principal (automatic)** > Next
+        5. In the Subscription drop-down, select your Azure subscription
+        6. In the **Resource group** drop-down, select **ToyWebsite**
+        7. In **Service connection name**, enter **ToyWebsite**.
+            - Ensure that the **Grant access permission to all pipelines** checkbox is selected.
+            - NOTICE: For simplicity, you're giving every pipeline access to your service connection. 
+              + When you create real service connections that work with production resources, consider restricting access to only the pipelines that need them.
+
+6. Exercise - Add a Bicep deployment task to the pipeline
+    1. Add your website's Bicep file to the Git repository
+        1. Create **main.bicep** file in **deploy** folder:
+          ```Bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string = resourceGroup().location
+
+          @description('The type of environment. This must be nonprod or prod.')
+          @allowed([
+            'nonprod'
+            'prod'
+          ])
+          param environmentType string
+
+          @description('Indicates whether to deploy the storage account for toy manuals.')
+          param deployToyManualsStorageAccount bool
+
+          @description('A unique suffix to add to resource names that need to be globally unique.')
+          @maxLength(13)
+          param resourceNameSuffix string = uniqueString(resourceGroup().id)
+
+          var appServiceAppName = 'toy-website-${resourceNameSuffix}'
+          var appServicePlanName = 'toy-website-plan'
+          var toyManualsStorageAccountName = 'toyweb${resourceNameSuffix}'
+
+          // Define the SKUs for each component based on the environment type.
+          var environmentConfigurationMap = {
+            nonprod: {
+              appServicePlan: {
+                sku: {
+                  name: 'F1'
+                  capacity: 1
+                }
+              }
+              toyManualsStorageAccount: {
+                sku: {
+                  name: 'Standard_LRS'
+                }
+              }
+            }
+            prod: {
+              appServicePlan: {
+                sku: {
+                  name: 'S1'
+                  capacity: 2
+                }
+              }
+              toyManualsStorageAccount: {
+                sku: {
+                  name: 'Standard_ZRS'
+                }
+              }
+            }
+          }
+
+          var toyManualsStorageAccountConnectionString = deployToyManualsStorageAccount ? 'DefaultEndpointsProtocol=https;AccountName=${toyManualsStorageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${toyManualsStorageAccount.listKeys().keys[0].value}' : ''
+
+          resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
+            name: appServicePlanName
+            location: location
+            sku: environmentConfigurationMap[environmentType].appServicePlan.sku
+          }
+
+          resource appServiceApp 'Microsoft.Web/sites@2022-03-01' = {
+            name: appServiceAppName
+            location: location
+            properties: {
+              serverFarmId: appServicePlan.id
+              httpsOnly: true
+              siteConfig: {
+                appSettings: [
+                  {
+                    name: 'ToyManualsStorageAccountConnectionString'
+                    value: toyManualsStorageAccountConnectionString
+                  }
+                ]
+              }
+            }
+          }
+
+          resource toyManualsStorageAccount 'Microsoft.Storage/storageAccounts@2022-09-01' = if (deployToyManualsStorageAccount) {
+            name: toyManualsStorageAccountName
+            location: location
+            kind: 'StorageV2'
+            sku: environmentConfigurationMap[environmentType].toyManualsStorageAccount.sku
+          }
+          ```
+
+        2. push the changes:
+            ```Bash
+            git add deploy/main.bicep
+            git commit -m 'Add Bicep file'
+            git push
+            ```
+
+    2. Replace the pipeline steps
+        ```yaml
+        trigger: none
+
+        pool:
+          vmImage: ubuntu-latest
+
+        variables:
+        - name: deploymentDefaultLocation
+          value: eastasia
+
+        jobs:
+        ```
+        ```
+        jobs:
+          - job:
+            steps:
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              inputs:
+                connectedServiceName: $(ServiceConnectionName)
+                deploymentName: $(Build.BuildNumber)
+                location: $(deploymentDefaultLocation)
+                resourceGroupName: $(ResourceGroupName)
+                csmFile: deploy/main.bicep
+                overrideParameters: >
+                  -environmentType $(EnvironmentType)
+                  -deployToyManualsStorageAccount $(DeployToyManualsStorageAccount)
+        ```
+
+        - NOTE: It's a good idea to type this code yourself instead of copying and pasting it from this module. 
+          + Pay attention to the file's indentation. If your indentation isn't correct, your YAML file won't be valid.
+          + Visual Studio Code indicates errors by displaying squiggly lines.
+
+        1. Stage your changes,commit them to the repository, and push them to Azure Repos: 
+            ```
+            git add deploy/azure-pipelines.yml
+            git commit -m 'Add deployment task to pipeline'
+            git push
+            ```
+
+    3. Add pipeline variables
+        - Select **Pipelines**, edit your pipeline, add variables:
+          + ServiceConnectionName: ToyWebsite
+          + ResourceGroupName: ToyWebsite
+          + EnvironmentType: nonprod
+
+          + DeployToyManualsStorageAccount: true
+
+
+    4. Run your pipeline
+        - set **DeployToyManualsStorageAccount** to false and run your pipeline
+
+    5. Verify the deployment: go to Resource Group on Azure Portal
+
+7. Use triggers to control when your pipeline runs
+    1. What is a pipeline trigger?
+    
+    2. Branch triggers
+        ```yaml
+        trigger:
+        - main
+        ```
+
+        1. Trigger when multiple branches change
+            ```yaml
+            trigger:
+              branches:
+                include:
+                - main
+                - release/*
+            ```
+
+        2. Path filters
+            ```yaml
+            trigger:
+              branches:
+                include:
+                - main
+              paths:
+                exclude:
+                - docs
+                include:
+                - deploy
+            ```
+
+    3. Schedule your pipeline to run automatically
+        ```yaml
+        schedules:
+        - cron: "0 0 * * *"
+          displayName: Daily environment restore
+          branches:
+            include:
+            - main
+        ```       
+        - __0 0 * * *__ means run every day at midnight UTC.                           
+
+    4. Use multiple triggers
+        ```yaml
+        trigger:
+        - main
+
+        schedules:
+        - cron: "0 0 * * *"
+          displayName: Deploy test environment
+          branches:
+            include:
+            - main
+        ```
+
+        - TIP: It's a good practice to set triggers for each pipeline. 
+          + If you don't set triggers, by default, your pipeline automatically runs whenever any file changes on any branch, which often isn't what you want.
+
+    5. Concurrency control
+        - By default, Azure Pipelines allows multiple instances of your pipeline to run simultaneously.
+          + This can happen when you make multiple commits to a branch within a short time.
+
+        - In some situations, having multiple concurrent runs of your pipeline isn't a problem.
+          + But when you work with deployment pipelines, it can be challenging to ensure that your pipeline runs aren't overwriting your Azure resources or configuration in ways that you don't expect.
+
+        - To avoid these problems, you can use the **batch** keyword with a trigger, like in this example:
+          ```yaml
+          trigger:
+            batch: true
+            branches:
+              include:
+              - main
+          ```
+          + When your trigger fires, Azure Pipelines ensures that it waits for any active pipeline run to complete. 
+            - Then, it starts a new run with all of the changes that have accumulated since the last run.
+
+8. Exercise - Update your pipeline's trigger
+    1. Update the trigger to be branch-based
+        - **deploy/azure-pipelines.yml** file:
+          ```
+          trigger:
+            batch: true
+            branches:
+              include:
+              - main
+          ```
+
+        - Commit the changes:
+          ```
+          git add .
+          git commit -m 'Add branch trigger'
+          ```
+    
+    2. Update your Bicep file
+        - **main.bicep** file:
+          ```Bicep
+          resource appServiceApp 'Microsoft.Web/sites@2022-03-01' = {
+          name: appServiceAppName
+          location: location
+          properties: {
+            serverFarmId: appServicePlan.id
+            httpsOnly: true
+            siteConfig: {
+              alwaysOn: true // Update
+              appSettings: [
+                {
+                  name: 'ToyManualsStorageAccountConnectionString'
+                  value: toyManualsStorageAccountConnectionString
+                }
+              ]
+            }
+          }
+        }
+        ```
+
+        ```
+        git add .
+        git commit -m 'Configure app Always On setting'
+        git push
+        ```
+        - NOTE: There was a conflict. AlwaysOn cannot be set for this site as the plan does not allow it. 
+          + This error message indicates that the deployment failed because the App Service app was deployed by using the F1 free tier, which doesn't support the Always On feature.
+
+        - IMPORTANT: There are some strategies you can use to verify and test your Bicep code.
+
+    3. Verify that the pipeline fails
+
+    4. Fix the Bicep file and see the pipeline triggered again
+        1. In Visual Studio Code, add new properties for each environment type to the **environmentConfigurationMap** variable:
+            ```Bicep
+            var environmentConfigurationMap = {
+              nonprod: {
+                appServiceApp: { // Update
+                  alwaysOn: false
+                }
+                appServicePlan: {
+                  sku: {
+                    name: 'F1'
+                    capacity: 1
+                  }
+                }
+                toyManualsStorageAccount: {
+                  sku: {
+                    name: 'Standard_LRS'
+                  }
+                }
+              }
+              prod: {
+                appServiceApp: { // Update
+                  alwaysOn: true
+                }
+                appServicePlan: {
+                  sku: {
+                    name: 'S1'
+                    capacity: 2
+                  }
+                }
+                toyManualsStorageAccount: {
+                  sku: {
+                    name: 'Standard_ZRS'
+                  }
+                }
+              }
+            }
+            ```
+
+        2. Change the application's **alwaysOn** setting to use the appropriate configuration map value for the environment type:
+            ```Bicep
+            resource appServiceApp 'Microsoft.Web/sites@2022-03-01' = {
+              name: appServiceAppName
+              location: location
+              properties: {
+                serverFarmId: appServicePlan.id
+                httpsOnly: true
+                siteConfig: {
+                  alwaysOn: environmentConfigurationMap[environmentType].appServiceApp.alwaysOn // Update
+                  appSettings: [
+                    {
+                      name: 'ToyManualsStorageAccountConnectionString'
+                      value: toyManualsStorageAccountConnectionString
+                    }
+                  ]
+                }
+              }
+            }
+            ```
+
+        3. Commit the changes
+            ```Bash
+            git add .
+            git commit -m 'Enable App Service Always On for production environments only'
+            git push
+            ```
+
+    5. Verify that the pipeline succeeds
+
+    6. Clean up the resources
+        ```
+        az group delete --resource-group ToyWebsite --yes --no-wait
+        ```
+        - The resource group is deleted in the background.
+
+9. References
+    - Tasks: https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/
+        + Azure Resource Group Deployment task: https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/azure-resource-group-deployment
+        + Azure CLI: https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/azure-cli
+        + Azure PowerShell: https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/azure-powershell
+    - Pipeline variables: https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables?tabs=yaml
+        + Predefined variables: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?tabs=yaml
+    - Pipeline triggers: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/triggers
+        + Batching: https://learn.microsoft.com/en-us/azure/devops/pipelines/repos/azure-repos-git#batching-ci-runs
+        + Scheduled triggers: https://learn.microsoft.com/en-us/azure/devops/pipelines/process/scheduled-triggers#cron-syntax
+    - Agents and self-hosted agents: https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents
+    - Service connections: https://learn.microsoft.com/en-us/azure/devops/pipelines/library/service-endpoints
