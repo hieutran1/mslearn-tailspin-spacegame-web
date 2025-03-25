@@ -11,7 +11,8 @@
     2. Option 2: Deploy Azure resources by using Bicep and GitHub Actions
         - https://learn.microsoft.com/en-us/training/paths/bicep-github-actions/
 
-# Part 1: Fundamentals of Bicep: https://learn.microsoft.com/en-us/training/paths/fundamentals-bicep/
+# Part 1: Fundamentals of Bicep
+- https://learn.microsoft.com/en-us/training/paths/fundamentals-bicep/
 
 ## Introduction to infrastructure as code using Bicep
 - https://learn.microsoft.com/en-us/training/modules/introduction-to-infrastructure-as-code-using-bicep
@@ -185,6 +186,8 @@
           + Open source tools like Terraform can be used for multicloud deployments, including deployments to Azure.
 
 ## Build your first Bicep template
+- https://learn.microsoft.com/en-us/training/modules/build-first-bicep-template/
+
 1. Example scenario
     - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company. 
     - You'll host the website in Azure using Azure App Service.
@@ -1019,6 +1022,865 @@
         + Bicep documentation: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep
         + Template reference for each Azure resource type: https://learn.microsoft.com/en-us/azure/templates/
         + Bicep functions: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/bicep-functions
+
+## Build reusable Bicep templates by using parameters
+- https://learn.microsoft.com/en-us/training/modules/build-reusable-bicep-templates-parameters
+
+1. Example scenario
+    - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company. 
+      + The human resources (HR) department is migrating an on-premises web application and its database to Azure. 
+      + The application will handle information about all of the toy company employees, so security is important.
+
+    - You've been asked to prepare infrastructure for three environments: dev, test, and production. 
+      + You'll build this infrastructure by using infrastructure as code techniques so that you can reuse the same templates to deploy across all of your environments. 
+      + You'll create separate sets of parameter values for each environment, while securely retrieving database credentials from Azure Key Vault.
+
+2. Understand parameters
+    1. Declare a parameter
+        ```Bicep
+        param environmentName string
+        ```
+    2. Add a default value
+        ```Bicep
+        Add a default value
+        ```
+
+    3. Understand parameter types
+        - Parameters in Bicep can be one of the following types:
+          + **string**, which lets you enter arbitrary text.
+          + **int**, which lets you enter a number.
+          + **bool**, which represents a Boolean (true or false) value.
+          + **object** and **array**, which represent structured data and lists.
+
+        1. Objects
+            ```
+            param appServicePlanSku object = {
+              name: 'F1'
+              tier: 'Free'
+              capacity: 1
+            }
+            ```
+
+            - Usage:
+              ```Bicep
+              resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+                name: appServicePlanName
+                location: location
+                sku: {
+                  name: appServicePlanSku.name
+                  tier: appServicePlanSku.tier
+                  capacity: appServicePlanSku.capacity
+                }
+              }
+              ```
+
+            - Another example of where you might use an object parameter is for specifying resource tags.
+              + You can attach custom tag metadata to the resources that you deploy, which you can use to identify important information about a resource.
+              + Tags are useful for scenarios like tracking which team owns a resource, or when a resource belongs to a production or non-production environment.
+
+              ```Bicep
+              param resourceTags object = {
+                EnvironmentName: 'Test'
+                CostCenter: '1000100'
+                Team: 'Human Resources'
+              }
+              ```
+              - Whenever you define a resource in your Bicep file, you can reuse it wherever you define the tags property:
+                ```Bicep
+                resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+                  name: appServicePlanName
+                  location: location
+                  tags: resourceTags // NOTICE
+                  sku: {
+                    name: 'S1'
+                  }
+                }
+
+                resource appServiceApp 'Microsoft.Web/sites@' = {
+                  name: appServiceAppName
+                  location: location
+                  tags: resourceTags // NOTICE
+                  kind: 'app'
+                  properties: {
+                    serverFarmId: appServicePlan.id
+                  }
+                }
+                ```
+
+        2. Arrays
+            - An array is a list of items. 
+            - As an example, you might use an array of string values to declare a list of email addresses for an Azure Monitor action group.
+              + Or you might use an array of objects to represent a list of subnets for a virtual network.
+
+            ```Bicep
+            param cosmosDBAccountLocations array = [
+              {
+                locationName: 'australiaeast'
+              }
+              {
+                locationName: 'southcentralus'
+              }
+              {
+                locationName: 'westeurope'
+              }
+            ]
+            ```
+
+    4. Specify a list of allowed values
+        ```Bicep
+        @allowed([
+          'P1v3'
+          'P2v3'
+          'P3v3'
+        ])
+        param appServicePlanSkuName string
+        ```
+
+    5. Restrict parameter length and values
+        ```Bicep
+        @minLength(5)
+        @maxLength(24)
+        param storageAccountName string
+        ```
+
+        ```
+        @minValue(1)
+        @maxValue(10)
+        param appServicePlanInstanceCount int
+        ```
+    
+    6. Add descriptions to parameters
+        ```Bicep
+        @description('The locations into which this Cosmos DB account should be configured. This parameter needs to be a list of objects, each of which has a locationName property.')
+        param cosmosDBAccountLocations array
+        ```
+
+3. Exercise - Add parameters and decorators
+    1. Create a Bicep template with parameters
+        - Create **main.bicep** file:
+            ```Bicep
+            param environmentName string = 'dev'
+            param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+            param appServicePlanInstanceCount int = 1
+            param appServicePlanSku object = {
+              name: 'F1'
+              tier: 'Free'
+            }
+            param location string = 'eastus'
+
+            var appServicePlanName = '${environmentName}-${solutionName}-plan'
+            var appServiceAppName = '${environmentName}-${solutionName}-app'
+            ```
+            + TIP:
+              - The **uniqueString()** function is useful for creating globally unique resource names.
+                + It returns a string that's the same on every deployment to the same resource group, but different when you deploy to different resource groups or subscriptions.
+
+              - You're specifying that the **location** parameter should be set to **westus3**. 
+                + Normally, you would create resources in the same location as the resource group by using the **resourceGroup().location** property. 
+                + But when you work with the Microsoft Learn sandbox, you need to use certain Azure regions that don't match the resource group's location.
+
+        - In the **main.bicep** file in Visual Studio Code, add the following code to the bottom of the file:
+            ```Bicep
+            resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+              name: appServicePlanName
+              location: location
+              sku: {
+                name: appServicePlanSku.name
+                tier: appServicePlanSku.tier
+                capacity: appServicePlanInstanceCount
+              }
+            }
+
+            resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+              name: appServiceAppName
+              location: location
+              properties: {
+                serverFarmId: appServicePlan.id
+                httpsOnly: true
+              }
+            }
+            ```
+
+        1. Add parameter descriptions
+            - In the **main.bicep** file in Visual Studio Code, add the **@description** decorator directly above every parameter
+              ```Bicep
+              @description('The name of the environment. This must be dev, test, or prod.')
+              param environmentName string = 'dev'
+
+              @description('The unique name of the solution. This is used to ensure that resource names are unique.')
+              param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+
+              @description('The number of App Service plan instances.')
+              param appServicePlanInstanceCount int = 1
+
+              @description('The name and tier of the App Service plan SKU.')
+              param appServicePlanSku object = {
+                name: 'F1'
+                tier: 'Free'
+              }
+
+              @description('The Azure region into which the resources should be deployed.')
+              param location string = 'eastus'
+              ```
+
+        2. Limit input values
+            - Your toy company will deploy the HR application to three environments: *dev*, *test*, and *prod*.
+              + You'll limit the *environmentName* parameter to only allow those three values.
+
+            - In the **main.bicep** file in Visual Studio Code, find the **environmentName** parameter. 
+              + Insert an **@allowed** decorator underneath its **@description** decorator
+                ```Bicep
+                @description('The name of the environment. This must be dev, test, or prod.')
+                @allowed([
+                  'dev'
+                  'test'
+                  'prod'
+                ])
+                param environmentName string = 'dev'
+                ```
+
+        3. Limit input lengths
+            - Your **solutionName** parameter is used to generate the names of resources. 
+              + You want to enforce a minimum length of 5 characters and a maximum length of 30 characters.
+                ```
+                @description('The unique name of the solution. This is used to ensure that resource names are unique.')
+                @minLength(5)
+                @maxLength(30)
+                param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+                ```
+
+        4. Limit numeric values
+            - Next, you'll ensure that the **appServicePlanInstanceCount** parameter only allows values between 1 and 10.
+              ```Bicep
+              @description('The number of App Service plan instances.')
+              @minValue(1)
+              @maxValue(10)
+              param appServicePlanInstanceCount int = 1
+              ```
+
+    2. Verify your Bicep file
+        - **main.bicep** file completed:
+          ```Bicep
+          @description('The name of the environment. This must be dev, test, or prod.')
+          @allowed([
+            'dev'
+            'test'
+            'prod'
+          ])
+          param environmentName string = 'dev'
+
+          @description('The unique name of the solution. This is used to ensure that resource names are unique.')
+          @minLength(5)
+          @maxLength(30)
+          param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+
+          @description('The number of App Service plan instances.')
+          @minValue(1)
+          @maxValue(10)
+          param appServicePlanInstanceCount int = 1
+
+          @description('The name and tier of the App Service plan SKU.')
+          param appServicePlanSku object = {
+            name: 'F1'
+            tier: 'Free'
+          }
+
+          @description('The Azure region into which the resources should be deployed.')
+          param location string = 'eastus'
+
+          var appServicePlanName = '${environmentName}-${solutionName}-plan'
+          var appServiceAppName = '${environmentName}-${solutionName}-app'
+
+          resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+            name: appServicePlanName
+            location: location
+            sku: {
+              name: appServicePlanSku.name
+              tier: appServicePlanSku.tier
+              capacity: appServicePlanInstanceCount
+            }
+          }
+
+          resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+            name: appServiceAppName
+            location: location
+            properties: {
+              serverFarmId: appServicePlan.id
+              httpsOnly: true
+            }
+          }
+          ```
+
+    3. Deploy the Bicep template to Azure
+        1. Install Bicep
+            - Run the following command to ensure you have the latest version of Bicep:
+              ```Azure CLI
+              az bicep install && az bicep upgrade
+              ```
+
+            - To use Bicep from Azure PowerShell, install the Bicep CLI
+              + https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/bicep-install?tabs=azure-powershell#azure-powershell
+
+        2. Sign in to Azure
+            1. In the Visual Studio Code terminal, sign in to Azure by running the following command:
+                ```Azure CLI
+                az login
+                ```
+                ```Azure PS
+                Connect-AzAccount
+                ```
+
+            2. Get the Concierge Subscription IDs
+                ```Azure CLI
+                az account list --refresh --query "[?contains(name, 'Concierge Subscription')].id" --output table
+                ```
+                ```Azure PS
+                Get-AzSubscription
+                ```
+
+            3. Set the default subscription by using the subscription ID
+                ```Azure CLI
+                az account set --subscription {your subscription ID}
+                ```
+
+                ```Azure PS
+                $context = Get-AzSubscription -SubscriptionId {Your subscription ID}
+                Set-AzContext $context
+                ```
+
+        3. Set the default resource group
+            ```Azure CLI
+            az group create --name rg-mslearn --location eastasia
+
+            az configure --defaults group="[sandbox resource group name]"
+            ```
+            - When you use the Azure CLI, you can set the default resource group and omit the parameter from the rest of the Azure CLI commands.
+
+            ```Azure PS
+            Set-AzDefault -ResourceGroupName [sandbox resource group name]
+            ```
+
+        4. Deploy the template to Azure by using the Azure CLI
+            ```Azure CLI
+            az deployment group create --name main --template-file main.bicep
+            ```
+
+            ```Azure PS
+            New-AzResourceGroupDeployment -Name main -TemplateFile main.bicep
+            ```
+
+    4. Verify your deployment 
+        - Go to Resource groups of the Azure portal, check deployment called **main**.
+
+4. Provide values using parameter files
+    1. Create parameters files
+        - Parameters files make it easy to specify parameter values together as a set.
+        - parameters files are created by using a Bicep parameters file with the **.bicepparam** file extension or a JSON parameters file.
+        - Here's what a JSON parameters file looks like:
+          ```JSON
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "appServicePlanInstanceCount": {
+                "value": 3
+              },
+              "appServicePlanSku": {
+                "value": {
+                  "name": "P1v3",
+                  "tier": "PremiumV3"
+                }
+              },
+              "cosmosDBAccountLocations": {
+                "value": [
+                  {
+                    "locationName": "australiaeast"
+                  },
+                  {
+                    "locationName": "southcentralus"
+                  },
+                  {
+                    "locationName": "westeurope"
+                  }
+                ]
+              }
+            }
+          }
+          ```
+          + **$schema** helps Azure Resource Manager to understand that this file is a parameters file.
+          + **contentVersion** is a property that you can use to keep track of significant changes in your parameters file if you want.
+            - Usually, it's set to its default value of **1.0.0.0**.
+          + The **parameters** section lists each parameter and the value you want to use. The parameter value must be specified as an object. 
+            - The object has a property called **value** that defines the actual parameter value to use.
+
+        - Generally, you'll create a parameters file for each environment.
+          + It's a good practice to include the environment name in the name of the parameters file.
+        - For example, **main.parameters.dev.json** for your development environment and **main.parameters.production.json** for your production environment.
+
+        - NOTE: Make sure you only specify values for parameters that exist in your Bicep template. 
+          + When you create a deployment, Azure checks your parameters and gives you an error if you've tried to specify a value for a parameter that isn't in the Bicep file.
+
+    2. Use parameters files at deployment time
+        - **az deployment group create** command, **--parameters** argument
+          ```Azure CLI
+          az deployment group create --name main --template-file main.bicep --parameters main.parameters.json
+          ```
+
+    3. Override parameter values
+        - Three ways to specify parameter values: *default values*, *the command line*, and *parameters files*.
+        - Order of precedence: *default values* --> *parameters files* --> *the command line*
+
+        - Let's see how this approach works.
+          + Here's an example Bicep file that defines three parameters, each with default values:
+            ```Bicep
+            param location string = resourceGroup().location
+            param appServicePlanInstanceCount int = 1
+            param appServicePlanSku object = {
+              name: 'F1'
+              tier: 'Free'
+            }
+            ```
+
+          + Let's look at a parameters file that overrides the value of two of the parameters but doesn't specify a value for the **location** parameter:
+            ```JSON
+            {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "appServicePlanInstanceCount": {
+                  "value": 3
+                },
+                "appServicePlanSku": {
+                  "value": {
+                    "name": "P1v3",
+                    "tier": "PremiumV3"
+                  }
+                }
+              }
+            }
+            ```
+
+          + When you create the deployment, we also override the value for **appServicePlanInstanceCount**.
+            - Like with parameters files, you use the **--parameters** argument, but you add the value you want to override as its own value:
+              ```
+              az deployment group create --name main --template-file main.bicep --parameters main.parameters.json appServicePlanInstanceCount=5
+              ```
+
+5. Secure your parameters
+    - Sometimes you need to pass sensitive values into your deployments, like passwords and API keys. 
+      + But you need to ensure these values are protected. 
+      + In some situations, you don't want the person who's creating the deployment to know the secret values. 
+      + Other times, someone will enter the parameter value when they create the deployment, but you need to make sure the secret values aren't logged.
+
+    1. Define secure parameters
+        - The **@secure** decorator can be applied to string and object parameters that might contain secret values.
+        - As part of the HR application migration, you need to deploy an Azure SQL logical server and database.
+          + You'll provision the logical server with an administrator login and password
+            ```
+            @secure()
+            param sqlServerAdministratorLogin string
+
+            @secure()
+            param sqlServerAdministratorPassword string
+            ```
+            - NOTICE: that neither parameter has a default value specified. 
+              + It's a good practice to avoid specifying default values for usernames, passwords, and other secrets
+
+            - TIP: Make sure you don't create outputs for sensitive data. 
+              + Output values can be accessed by anyone who has access to the deployment history. 
+              + They're not appropriate for handling secrets.
+
+      2. Avoid using parameters files for secrets
+
+      3. Integrate with Azure Key Vault
+          - Azure Key Vault is a service designed to store and provide access to secrets.
+            + You can integrate your Bicep templates with Key Vault by using a parameters file with a reference to a Key Vault secret.
+
+          - TIP: You can refer to secrets in key vaults that are located in a different resource group or subscription from the one you're deploying to.
+
+          - Here's a parameters file that uses Key Vault references to look up the SQL logical server administrator login and password to use: *sqlServerAdministratorLogin* and *sqlServerAdministratorPassword* block
+            ```JSON
+            {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "sqlServerAdministratorLogin": {
+                  "reference": {
+                    "keyVault": {
+                      "id": "/subscriptions/f0750bbe-ea75-4ae5-b24d-a92ca601da2c/resourceGroups/PlatformResources/providers/Microsoft.KeyVault/vaults/toysecrets"
+                    },
+                    "secretName": "sqlAdminLogin"
+                  }
+                },
+                "sqlServerAdministratorPassword": {
+                  "reference": {
+                    "keyVault": {
+                      "id": "/subscriptions/f0750bbe-ea75-4ae5-b24d-a92ca601da2c/resourceGroups/PlatformResources/providers/Microsoft.KeyVault/vaults/toysecrets"
+                    },
+                    "secretName": "sqlAdminLoginPassword"
+                  }
+                }
+              }
+            }
+            ```
+            + NOTICE: that instead of specifying a value for each of the parameters, this file has a reference object, which contains details of the key vault and secret.
+
+            + IMPORTANT: Your key vault must be configured to allow Resource Manager to access the data in the key vault during template deployments.
+              - Also, the user who deploys the template must have permission to access the key vault.
+
+      4. Use Key Vault with modules
+          - Here's an example Bicep file that deploys a module and provides the value of the **ApiKey** secret parameter by taking it directly from Key Vault:
+            ```Bicep
+            resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
+              name: keyVaultName
+            }
+
+            module applicationModule 'application.bicep' = {
+              name: 'application-module'
+              params: {
+                apiKey: keyVault.getSecret('ApiKey') // Update
+              }
+            }
+            ```
+            + NOTICE: the Key Vault resource is referenced by using the **existing** keyword.
+              - The keyword tells Bicep that the Key Vault already exists, and this code is a reference to that vault. 
+                + Bicep won't redeploy it
+            + NOTICE:the module's code uses the **getSecret()** function in the value for the module's **apiKey** parameter
+              - This is a special Bicep function that can only be used with secure module parameters.
+              - Internally, Bicep translates this expression to the same kind of Key Vault reference you learned about earlier.
+
+6. Exercise - Add a parameter file and secure parameters
+    1. Update existing **main.bicep** file:
+        1. Remove the default value for the App Service plan SKU
+            ```Bicep
+            @description('The name and tier of the App Service plan SKU.')
+            param appServicePlanSku object
+            ```
+
+        2. Add new parameters
+            - In the main.bicep file in Visual Studio Code, add the **sqlServerAdministratorLogin**, **sqlServerAdministratorPassword**, and **sqlDatabaseSku** parameters underneath the current parameter declarations.
+              ```Bicep
+              @description('The name of the environment. This must be dev, test, or prod.')
+              @allowed([
+                'dev'
+                'test'
+                'prod'
+              ])
+              param environmentName string = 'dev'
+
+              @description('The unique name of the solution. This is used to ensure that resource names are unique.')
+              @minLength(5)
+              @maxLength(30)
+              param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+
+              @description('The number of App Service plan instances.')
+              @minValue(1)
+              @maxValue(10)
+              param appServicePlanInstanceCount int = 1
+
+              @description('The name and tier of the App Service plan SKU.')
+              param appServicePlanSku object
+
+              @description('The Azure region into which the resources should be deployed.')
+              param location string = 'eastus'
+
+              // NEW
+              @secure()
+              @description('The administrator login username for the SQL server.')
+              param sqlServerAdministratorLogin string
+
+              @secure()
+              @description('The administrator login password for the SQL server.')
+              param sqlServerAdministratorPassword string
+
+              @description('The name and tier of the SQL database SKU.')
+              param sqlDatabaseSku object
+              ```
+
+        3. Add new variables
+            - In the main.bicep file in Visual Studio Code, add the **sqlServerName** and **sqlDatabaseName** variables underneath the existing variables
+              ```Bicep
+              var appServicePlanName = '${environmentName}-${solutionName}-plan'
+              var appServiceAppName = '${environmentName}-${solutionName}-app'
+              
+              // NEW
+              var sqlServerName = '${environmentName}-${solutionName}-sql'
+              var sqlDatabaseName = 'Employees'
+              ```
+
+        4. Add SQL server and database resources
+            - In the **main.bicep** file in Visual Studio Code, add the following code to the bottom of the file:
+              ```Bicep
+              resource sqlServer 'Microsoft.Sql/servers@2024-05-01-preview' = {
+                name: sqlServerName
+                location: location
+                properties: {
+                  administratorLogin: sqlServerAdministratorLogin
+                  administratorLoginPassword: sqlServerAdministratorPassword
+                }
+              }
+
+              resource sqlDatabase 'Microsoft.Sql/servers/databases@2024-05-01-preview' = {
+                parent: sqlServer
+                name: sqlDatabaseName
+                location: location
+                sku: {
+                  name: sqlDatabaseSku.name
+                  tier: sqlDatabaseSku.tier
+                }
+              }
+              ```
+
+    2. Verify your Bicep file
+        ```Bicep
+        @description('The name of the environment. This must be dev, test, or prod.')
+        @allowed([
+          'dev'
+          'test'
+          'prod'
+        ])
+        param environmentName string = 'dev'
+
+        @description('The unique name of the solution. This is used to ensure that resource names are unique.')
+        @minLength(5)
+        @maxLength(30)
+        param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+
+        @description('The number of App Service plan instances.')
+        @minValue(1)
+        @maxValue(10)
+        param appServicePlanInstanceCount int = 1
+
+        @description('The name and tier of the App Service plan SKU.')
+        param appServicePlanSku object
+
+        @description('The Azure region into which the resources should be deployed.')
+        param location string = 'eastus'
+
+        @secure()
+        @description('The administrator login username for the SQL server.')
+        param sqlServerAdministratorLogin string
+
+        @secure()
+        @description('The administrator login password for the SQL server.')
+        param sqlServerAdministratorPassword string
+
+        @description('The name and tier of the SQL database SKU.')
+        param sqlDatabaseSku object
+
+        var appServicePlanName = '${environmentName}-${solutionName}-plan'
+        var appServiceAppName = '${environmentName}-${solutionName}-app'
+        var sqlServerName = '${environmentName}-${solutionName}-sql'
+        var sqlDatabaseName = 'Employees'
+
+        resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+          name: appServicePlanName
+          location: location
+          sku: {
+            name: appServicePlanSku.name
+            tier: appServicePlanSku.tier
+            capacity: appServicePlanInstanceCount
+          }
+        }
+
+        resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+          name: appServiceAppName
+          location: location
+          properties: {
+            serverFarmId: appServicePlan.id
+            httpsOnly: true
+          }
+        }
+
+        resource sqlServer 'Microsoft.Sql/servers@2024-05-01-preview' = {
+          name: sqlServerName
+          location: location
+          properties: {
+            administratorLogin: sqlServerAdministratorLogin
+            administratorLoginPassword: sqlServerAdministratorPassword
+          }
+        }
+
+        resource sqlDatabase 'Microsoft.Sql/servers/databases@2024-05-01-preview' = {
+          parent: sqlServer
+          name: sqlDatabaseName
+          location: location
+          sku: {
+            name: sqlDatabaseSku.name
+            tier: sqlDatabaseSku.tier
+          }
+        }
+        ```
+
+    3. Create a parameters file
+        - Create **main.parameters.dev.json** file on the folder where the **main.bicep** file located
+            ```JSON
+            {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "appServicePlanSku": {
+                  "value": {
+                    "name": "F1",
+                    "tier": "Free"
+                  }
+                },
+                "sqlDatabaseSku": {
+                  "value": {
+                    "name": "Standard",
+                    "tier": "Standard"
+                  }
+                }
+              }
+            }
+            ```
+
+    4. Deploy the Bicep template with the parameters file
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep --parameters main.parameters.dev.json
+
+          --> Login: user
+              Password: P@ssword1
+        ```
+        - NOTE: When you enter the secure parameters, the values you choose must follow some rules:
+          + **sqlServerAdministratorLogin** must not be an easily guessable login name like **admin** or **root**. 
+            - It can contain only alphanumeric characters and must start with a letter.
+          
+          + **sqlServerAdministratorPassword** must be at least eight characters long and include lowercase letters, uppercase letters, numbers, and symbols.
+            - For more information on password complexity, see the SQL Azure password policy.
+              + https://learn.microsoft.com/en-us/sql/relational-databases/security/password-policy#password-complexity
+
+          + If the parameter values don't meet the requirements, Azure SQL won't deploy your server.
+          + Also, **make sure you keep a note of the login and password that you enter**.
+
+    5. Create a key vault and secrets
+        - Key vault names must be a globally unique string of 3 to 24 characters that can contain only uppercase and lowercase letters, hyphens (-), and numbers.
+          + For example, *demo-kv-1234567abcdefg*.
+
+        - To create the **keyVaultName**, **login**, and **password** variables, run each command separately. 
+          + Then you can run the block of commands to create the key vault and secrets.
+          ```Azure CLI
+          keyVaultName='YOUR-KEY-VAULT-NAME'
+          keyVaultName=kv-mslearn
+
+          read -s -p "Enter the login name: " login
+            --> user
+
+          read -s -p "Enter the password: " password
+            --> P@ssword1
+
+          az keyvault create --name $keyVaultName --location eastasia --enabled-for-template-deployment true
+
+          az keyvault secret set --vault-name $keyVaultName --name "sqlServerAdministratorLogin" --value $login --output none
+            --> ISSUE: make sure that you have given **Key Vault Administrator** role to your service principal from **Access Control (IAM)** section of your key vault
+
+          az keyvault secret set --vault-name $keyVaultName --name "sqlServerAdministratorPassword" --value $password --output none
+          ```
+          + NOTICE: 
+            - You're setting the **--enabled-for-template-deployment** setting on the vault so that Azure can use the secrets from your vault during deployments. 
+              + If you don't set this setting then, by default, your deployments can't access secrets in your vault.
+
+            - Also, whoever executes the deployment must also have permission to access the vault. 
+              + Because you created the key vault, you're the owner, so you won't have to explicitly grant the permission in this exercise. 
+              + For your own vaults, you need to grant access to the secrets.
+                - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/key-vault-parameter#grant-access-to-the-secrets
+
+          + NOTICE: if you cannot create a secret.
+            - If you are using **Azure role-based access control (recommended)**, make sure that you have given **Key Vault Administrator** role to your service principal from **Access Control (IAM)** section of your key vault.
+
+        1. Get the key vault's resource ID
+            ```Azure CLI
+            az keyvault show --name $keyVaultName --query id --output tsv
+
+              --> /subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/PlatformResources/providers/Microsoft.KeyVault/vaults/toysecrets
+            ```
+
+    6. Add a key vault reference to a parameters file
+        - update **main.parameters.dev.json** file, add **sqlServerAdministratorLogin** and **sqlServerAdministratorPassword** blocks
+          ```JSON
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "appServicePlanSku": {
+                "value": {
+                  "name": "F1",
+                  "tier": "Free"
+                }
+              },
+              "sqlDatabaseSku": {
+                "value": {
+                  "name": "Standard",
+                  "tier": "Standard"
+                }
+              },
+              "sqlServerAdministratorLogin": {
+                "reference": {
+                  "keyVault": {
+                    "id": "YOUR-KEY-VAULT-RESOURCE-ID"
+                  },
+                  "secretName": "sqlServerAdministratorLogin"
+                }
+              },
+              "sqlServerAdministratorPassword": {
+                "reference": {
+                  "keyVault": {
+                    "id": "YOUR-KEY-VAULT-RESOURCE-ID"
+                  },
+                  "secretName": "sqlServerAdministratorPassword"
+                }
+              }
+            }
+          }
+          ```
+
+    7. Deploy the Bicep template with parameters file and Azure Key Vault references
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep --parameters main.parameters.dev.json
+        ```
+
+        1. Check your deployment
+            1. go back to the Azure portal
+            2. Notice that the **appServicePlanSku** and the **sqlDatabaseSku** parameter values have both been set to the values in the parameters file.
+              - Also, notice that the **sqlServerAdministratorLogin** and **sqlServerAdministratorPassword** parameter values aren't displayed, because you applied the **@secure()** decorator to them.
+
+7. Summary
+    - Your company's HR department is migrating an on-premises web application to Azure. 
+      + The application will handle information about all of the toy company employees, so security is important.
+
+    - You created a Bicep template to deploy an Azure App Service plan, an application, and an Azure SQL server and database.
+      + You parameterized the template to make it generalizable for deploying across multiple environments.
+      + You applied parameter decorators to control the allowed parameter values.
+      + Finally, you created a parameter file with Azure Key Vault references to keep the administrator login and password secure.
+
+    - Imagine how much work it would be to deploy these resources for each environment.
+      + You'd have to manually provision the resources and remember to configure them correctly each time.
+      + Manually deploying Azure infrastructure might lead to inconsistency and security risks.
+
+    - Bicep makes it easy to describe your Azure resources and create reusable templates.
+      + You can parameterize the templates and use parameter files to automate and secure your deployments.
+
+    - Now, when you want to deploy your infrastructure for other environments, you can use the Bicep template and parameter file that you created.
+      + Your company can safely and consistently provision Azure resources.
+
+8. Learn more
+    - Bicep parameters: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/bicep-file#parameters
+    - Parameters in Bicep: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/parameters
+    - Create Bicep parameter file: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/parameter-files
+    - Azure Key Vault references: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/key-vault-parameter
+
+## Build flexible Bicep templates by using conditions and loops
+- https://learn.microsoft.com/en-us/training/modules/build-flexible-bicep-templates-conditions-loops
+
+1. Introduction
+    1. Introduction
+        - When you work with Bicep templates, conditions and loops can help make your Azure deployments more flexible. 
+          + With conditions, you can deploy resources only when specific constraints are in place. 
+          + And with loops, you can deploy multiple resources that have similar properties.
+
+    2. Example scenario
+2.
+3.
 
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
