@@ -2764,6 +2764,424 @@
     - Variables: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/variables
     - Outputs: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/outputs
 
+## Create composable Bicep files by using modules
+- https://learn.microsoft.com/en-us/training/modules/create-composable-bicep-files-using-modules
+
+1. Introduction
+    1. Example scenario
+        - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company.
+          + You've previously created a Bicep template that deploys websites to support the launch of each new toy product.
+
+        - Your company recently launched a new toy: a remote control wombat.
+          + The wombat toy has become popular, and the traffic to its website has increased significantly.
+          + Customers are complaining about slow response times because the server can't keep up with the demand.
+
+        - To improve performance and reduce cost, you've been asked to add a content delivery network, or CDN, to the website.
+          + You know that your company will need to include a CDN in other websites that it makes in the future, but also that not every website needs a CDN.
+          + So you decide to make the CDN component optional.
+
+        ```Design
+        Internet 
+          -> CDN enabled (CDN -> App Service app; App Service plan)
+          -> CDN not enabled (App Service app; App Service plan)
+        ```
+
+2. Create and use Bicep modules
+    1. The benefits of modules
+        1. Reusability
+            - For example, when you build out one solution, you might create separate modules for the app components, the database, and the network-related resources.
+              + Then, when you start to work on another project with similar network requirements, you can reuse the relevant module.
+
+        2. Encapsulation
+            - For example, when you define an Azure Functions app, you typically deploy the app, a hosting plan for the app, and a storage account for the app's metadata.
+              + These three components are defined separately, but they represent a logical grouping of resources, so it might make sense to define them as a module.
+
+            - That way, your main template doesn't need to be aware of the details of how a function app is deployed. That's the responsibility of the module.
+
+        3. Composability
+            - For example, you might create a module that deploys a virtual network, and another module that deploys a virtual machine.
+              + You define parameters and outputs for each module so that you can take the important information from one and send it to the other.
+
+        4. Functionality
+            - Occasionally, you might need to use modules to access certain functionality.
+            - For example, you can use modules and loops together to deploy multiple sets of resources.
+
+    2. Create a module
+        1. Split an existing Bicep template into modules
+        2. Nest modules
+            - Modules can include other modules. 
+              + By using this nesting technique, you can create some modules that deploy small sets of resources, then compose these into larger modules that define complex topologies of resources.
+              + A template combines these pieces into a deployable artifact.
+
+            - TIP: For complex deployments, sometimes it makes sense to use deployment pipelines to deploy multiple templates instead of creating a single template that does everything with nesting.
+
+        3. Choose good file names
+            - Be sure to use a descriptive file name for each module. 
+              + The file name effectively becomes the identifier for the module. 
+              + It's important that your colleagues can understand the module's purpose just by looking at the file name.
+
+    3. Use the module in a Bicep template
+        - Use **module** keyword
+          ```Bicep
+          module appModule 'modules/app.bicep' = {
+            name: 'myApp'
+            params: {
+              location: location
+              appServiceAppName: appServiceAppName
+              environmentType: environmentType
+            }
+          }
+          ```
+          + A symbolic name, like **appModule**, is used within this Bicep file whenever you want to refer to the module.
+            - The symbolic name never appears in Azure.
+          + **name** property, which specifies the name of the deployment
+          + **params** property: where you can specify values for the parameters that the module expects. 
+
+    4. How modules work
+        - Understanding how modules work isn't necessary for using them, but it can help you investigate problems with your deployments or help explain unexpected behavior.
+
+        1. Deployments
+            - In Azure, a deployment is a special resource that represents a deployment operation. 
+              + Deployments are Azure resources that have the resource type **Microsoft.Resources/deployments**.
+              + When you submit a Bicep deployment, you create or update a deployment resource.
+              + Similarly, when you create resources in the Azure portal, the portal creates a deployment resource on your behalf.
+
+        2. Generated JSON ARM templates
+            - When you deploy a Bicep file, Bicep converts it to a JSON ARM template.
+              + This conversion is also called **transpilation**.
+              + The modules that the template uses are embedded into the JSON file.
+              + Regardless of how many modules you include in your template, only a single JSON file will be created.
+
+3. Add parameters and outputs to modules
+    1. Module parameters
+        - You should also think about how you manage parameters that control the SKUs for your resources and other important configuration settings. 
+        - For example: When I deploy a production environment, the storage account should use the GRS tier.
+          + But modules sometimes present different concerns.
+
+    2. Use conditions
+        ```
+        param logAnalyticsWorkspaceId string = ''
+
+        resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
+          // ...
+        }
+
+        resource cosmosDBAccountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' =  if (logAnalyticsWorkspaceId != '') {
+          scope: cosmosDBAccount
+          name: 'route-logs-to-log-analytics'
+          properties: {
+            workspaceId: logAnalyticsWorkspaceId
+            logs: [
+              {
+                category: 'DataPlaneRequests'
+                enabled: true
+              }
+            ]
+          }
+        }
+        ```
+
+    3. Module outputs
+        ```
+        @description('The fully qualified Azure resource ID of the blob container within the storage account.')
+        output blobContainerResourceId string = storageAccount::blobService::container.id
+        ```
+        - TIP: You can also use dedicated services to store, manage, and access the settings that your Bicep template creates.
+          + Key Vault is designed to store secure values.
+          + **Azure App Configuration** is designed to store other (non-secure) values.
+
+    4. Chain modules together
+        ```Bicep
+        @description('Username for the virtual machine.')
+        param adminUsername string
+
+        @description('Password for the virtual machine.')
+        @minLength(12)
+        @secure()
+        param adminPassword string
+
+        module virtualNetwork 'modules/vnet.bicep' = {
+          name: 'virtual-network'
+        }
+
+        module virtualMachine 'modules/vm.bicep' = {
+          name: 'virtual-machine'
+          params: {
+            adminUsername: adminUsername
+            adminPassword: adminPassword
+            subnetResourceId: virtualNetwork.outputs.subnetResourceId
+          }
+        }
+        ```
+
+4. Exercise - Create and use a module
+    - You've been tasked with adding a content delivery network, or CDN, to your company's website for the launch of a toy wombat.
+      + However, other teams in your company have told you they don't need a CDN.
+      + In this exercise, you'll create modules for the website and the CDN, and you'll add the modules to a template.
+
+    1. Create a blank Bicep file: **main.bicep**
+    2. Create a module for your application
+        - **modules/app.bicep** file:
+          ```
+          @description('The Azure region into which the resources should be deployed.')
+          param location string
+
+          @description('The name of the App Service app.')
+          param appServiceAppName string
+
+          @description('The name of the App Service plan.')
+          param appServicePlanName string
+
+          @description('The name of the App Service plan SKU.')
+          param appServicePlanSkuName string
+
+          resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+            name: appServicePlanName
+            location: location
+            sku: {
+              name: appServicePlanSkuName
+            }
+          }
+
+          resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+            name: appServiceAppName
+            location: location
+            properties: {
+              serverFarmId: appServicePlan.id
+              httpsOnly: true
+            }
+          }
+
+          @description('The default host name of the App Service app.')
+          output appServiceAppHostName string = appServiceApp.properties.defaultHostName
+          ```
+
+    3. Add the module to your Bicep template
+        - Select **Required properties** from the pop-up menu:
+          ```bicep
+          module app 'modules/app.bicep' = {
+            name: 'toy-launch-app'
+            params: {
+              appServiceAppName: appServiceAppName
+              appServicePlanName: appServicePlanName
+              appServicePlanSkuName: appServicePlanSkuName
+              location: location
+            }
+          }
+          ```
+
+    4. Create a module for the content delivery network
+        - **modules/cdn.bicep** file:
+          ```bicep
+          @description('The host name (address) of the origin server.')
+          param originHostName string
+
+          @description('The name of the CDN profile.')
+          param profileName string = 'cdn-${uniqueString(resourceGroup().id)}'
+
+          @description('The name of the CDN endpoint')
+          param endpointName string = 'endpoint-${uniqueString(resourceGroup().id)}'
+
+          @description('Indicates whether the CDN endpoint requires HTTPS connections.')
+          param httpsOnly bool
+
+          var originName = 'my-origin'
+
+          resource cdnProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
+            name: profileName
+            location: 'global'
+            sku: {
+              name: 'Standard_Microsoft'
+            }
+          }
+
+          resource endpoint 'Microsoft.Cdn/profiles/endpoints@2024-09-01' = {
+            parent: cdnProfile
+            name: endpointName
+            location: 'global'
+            properties: {
+              originHostHeader: originHostName
+              isHttpAllowed: !httpsOnly
+              isHttpsAllowed: true
+              queryStringCachingBehavior: 'IgnoreQueryString'
+              contentTypesToCompress: [
+                'text/plain'
+                'text/html'
+                'text/css'
+                'application/x-javascript'
+                'text/javascript'
+              ]
+              isCompressionEnabled: true
+              origins: [
+                {
+                  name: originName
+                  properties: {
+                    hostName: originHostName
+                  }
+                }
+              ]
+            }
+          }
+
+          @description('The host name of the CDN endpoint.')
+          output endpointHostName string = endpoint.properties.hostName
+          ```
+          - This file deploys two resources: a CDN profile and a CDN endpoint.
+
+
+    5. Add the modules to the main Bicep template
+
+    6. Verify your Bicep file
+        - **main.bicep**:
+          ```bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string = 'westus3'
+
+          @description('The name of the App Service app.')
+          param appServiceAppName string = 'toy-${uniqueString(resourceGroup().id)}'
+
+          @description('The name of the App Service plan SKU.')
+          param appServicePlanSkuName string = 'F1'
+
+          @description('Indicates whether a CDN should be deployed.')
+          param deployCdn bool = true
+
+          var appServicePlanName = 'toy-product-launch-plan'
+
+          module app 'modules/app.bicep' = {
+            name: 'toy-launch-app'
+            params: {
+              appServiceAppName: appServiceAppName
+              appServicePlanName: appServicePlanName
+              appServicePlanSkuName: appServicePlanSkuName
+              location: location
+            }
+          }
+
+          module cdn 'modules/cdn.bicep' = if (deployCdn) {
+            name: 'toy-launch-cdn'
+            params: {
+              httpsOnly: true
+              originHostName: app.outputs.appServiceAppHostName
+            }
+          }
+
+          @description('The host name to use to access the website.')
+          output websiteHostName string = deployCdn ? cdn.outputs.endpointHostName : app.outputs.appServiceAppHostName
+          ```
+
+        - **modules/app.bicep** file:
+          ```Bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string
+
+          @description('The name of the App Service app.')
+          param appServiceAppName string
+
+          @description('The name of the App Service plan.')
+          param appServicePlanName string
+
+          @description('The name of the App Service plan SKU.')
+          param appServicePlanSkuName string
+
+          resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+            name: appServicePlanName
+            location: location
+            sku: {
+              name: appServicePlanSkuName
+            }
+          }
+
+          resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+            name: appServiceAppName
+            location: location
+            properties: {
+              serverFarmId: appServicePlan.id
+              httpsOnly: true
+            }
+          }
+
+          @description('The default host name of the App Service app.')
+          output appServiceAppHostName string = appServiceApp.properties.defaultHostName
+          ```
+
+        - **modules/cdn.bicep** file:
+          ```bicep
+          @description('The host name (address) of the origin server.')
+          param originHostName string
+
+          @description('The name of the CDN profile.')
+          param profileName string = 'cdn-${uniqueString(resourceGroup().id)}'
+
+          @description('The name of the CDN endpoint')
+          param endpointName string = 'endpoint-${uniqueString(resourceGroup().id)}'
+
+          @description('Indicates whether the CDN endpoint requires HTTPS connections.')
+          param httpsOnly bool
+
+          var originName = 'my-origin'
+
+          resource cdnProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
+            name: profileName
+            location: 'global'
+            sku: {
+              name: 'Standard_Microsoft'
+            }
+          }
+
+          resource endpoint 'Microsoft.Cdn/profiles/endpoints@2024-09-01' = {
+            parent: cdnProfile
+            name: endpointName
+            location: 'global'
+            properties: {
+              originHostHeader: originHostName
+              isHttpAllowed: !httpsOnly
+              isHttpsAllowed: true
+              queryStringCachingBehavior: 'IgnoreQueryString'
+              contentTypesToCompress: [
+                'text/plain'
+                'text/html'
+                'text/css'
+                'application/x-javascript'
+                'text/javascript'
+              ]
+              isCompressionEnabled: true
+              origins: [
+                {
+                  name: originName
+                  properties: {
+                    hostName: originHostName
+                  }
+                }
+              ]
+            }
+          }
+
+          @description('The host name of the CDN endpoint.')
+          output endpointHostName string = endpoint.properties.hostName
+          ```
+    7. Deploy the Bicep template to Azure
+        ```
+        az deployment group create --name main --template-file main.bicep
+        ```
+
+    8. Review the deployment history
+
+    9. Test the website
+        - When the CDN endpoint is active, you'll get the same App Service welcome page.
+          + This time, it has been served through the Azure Content Delivery Network service, which helps improve the website's performance.
+
+5. Summary
+    - Your company's new toy wombat is a success. However, the large amount of traffic to the website was causing performance problems and customer complaints.
+      + You needed to add a content delivery network, or CDN, to the website to help it better support the load.
+      + You wanted to do this in a reusable and composable way, because you knew that other websites and other projects in your company would also need a CDN in the future.
+
+    - In this module, you learned how to create and use Bicep modules to make your Bicep code reusable, better structured, and composable.
+      + You learned about the importance of creating good parameters and outputs for your modules to ensure that they're easy to chain together and compose into other templates, or even other modules.
+      + You also learned how conditions can help add flexibility to your modules.
+
+    - Now you can easily add a CDN into any of the websites that you create, whether or not they're deployed from your website's main template. 
+
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
 
