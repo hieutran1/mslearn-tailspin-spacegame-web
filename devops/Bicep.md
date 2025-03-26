@@ -1879,8 +1879,890 @@
           + And with loops, you can deploy multiple resources that have similar properties.
 
     2. Example scenario
-2.
-3.
+        - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company.
+          + Your company is designing a new smart teddy bear toy. 
+          + Some of the teddy bear's features are based on back-end server components and SQL databases that are hosted in Azure. 
+          + For security reasons, within your production environments, you need to make sure that you've enabled auditing on your Azure SQL logical servers.
+
+        - You expect that the toy will be very popular, and your company plans to launch it in new countries/regions regularly. 
+          + Every country/region where you launch the smart teddy bear will need a separate database server and virtual network. 
+          + To comply with each country's/region's laws, you'll need to physically place these resources in specific locations.
+          + You've been asked to deploy each country's/region's database servers and virtual networks and, at the same time, make it easy to add logical servers and virtual networks as the toy is launched in new countries/regions.
+
+        - Resource Group
+          + Azure SQL (logical server, teddy-eastus), Virtual network (teddybear-eastus)
+          + Azure SQL (logical server, teddy-westeurope), Virtual network (teddybear-westeurope)
+          + Azure SQL (logical server, teddy-eastasia), Virtual network (teddybear-eastasia)
+
+2. Deploy resources conditionally
+    - For example, at your toy company, you need to deploy resources to various environments. 
+      + When you deploy them to a production environment, you need to ensure that auditing is enabled for your Azure SQL logical servers. 
+      + But when you deploy resources to development environments, you don't want to enable auditing.
+      + You want to use a single template to deploy resources to all your environments.
+
+    1. Use basic conditions
+        - It's common to create conditions based on the values of parameters that you provide.
+        - For example, the following code deploys a storage account only when the **deployStorageAccount** parameter is set to **true**:
+          ```Bicep
+          param deployStorageAccount bool
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (deployStorageAccount) {
+            name: 'teddybearstorage'
+            location: resourceGroup().location
+            kind: 'StorageV2'
+            // ...
+          }
+          ```
+          + NOTICE that the **if** keyword is on the same line as the resource definition.
+
+    2. Use expressions as conditions
+        - For example, the code deploys a SQL auditing resource only when the **environmentName** parameter value is equal to **Production**:
+          ```Bicep
+          @allowed([
+            'Development'
+            'Production'
+          ])
+          param environmentName string
+
+          resource auditingSettings 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (environmentName == 'Production') {
+            parent: server
+            name: 'default'
+            properties: {
+            }
+          }
+          ```
+
+        - It's usually a good idea to create a variable for the expression that you're using as a condition.
+          + That way, your template is easier to understand and read.
+          ```Bicep
+          @allowed([
+            'Development'
+            'Production'
+          ])
+          param environmentName string
+
+          var auditingEnabled = environmentName == 'Production'
+
+          resource auditingSettings 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+            parent: server
+            name: 'default'
+            properties: {
+            }
+          }
+          ```
+
+    3. Depend on conditionally deployed resources
+        - When you deploy resources conditionally, you sometimes need to be aware of how Bicep evaluates the dependencies between them.
+        - Let's continue writing some Bicep code to deploy SQL auditing settings. 
+          + The Bicep file also needs to declare a storage account resource, as shown here: 
+          ```Bicep
+          @allowed([
+            'Development'
+            'Production'
+          ])
+          param environmentName string
+          param location string = resourceGroup().location
+          param auditStorageAccountName string = 'bearaudit${uniqueString(resourceGroup().id)}'
+
+          var auditingEnabled = environmentName == 'Production'
+          var storageAccountSkuName = 'Standard_LRS'
+
+          // Highlight
+          resource auditStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (auditingEnabled) {
+            name: auditStorageAccountName
+            location: location
+            sku: {
+              name: storageAccountSkuName
+            }
+            kind: 'StorageV2'
+          }
+
+          resource auditingSettings 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+            parent: server
+            name: 'default'
+            properties: {
+            }
+          }
+          ```
+
+        - Notice that the storage account has a condition too. 
+          + This means that it won't be deployed for non-production environments either. 
+          + The SQL auditing settings resource can now refer to the storage account details:
+          ```Bicep
+          resource auditingSettings 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+            parent: server
+            name: 'default'
+            properties: {
+              state: 'Enabled'
+              storageEndpoint: environmentName == 'Production' ? auditStorageAccount.properties.primaryEndpoints.blob : ''
+              storageAccountAccessKey: environmentName == 'Production' ? listKeys(auditStorageAccount.id, auditStorageAccount.apiVersion).keys[0].value : ''
+            }
+          }
+          ```
+          + IMPOTANT: Azure Resource Manager evaluates the property expressions before the conditionals on the resources.
+            - That means that if the Bicep code doesn't have this expression, the deployment will fail with a **ResourceNotFound** error.
+
+        - TIP: If you have several resources, all with the same condition for deployment, consider using Bicep modules.
+          + You can create a module that deploys all the resources, then put a condition on the module declaration in your main Bicep file.
+
+3. Exercise - Deploy resources conditionally
+    - You need to deploy your toy company's resources to a variety of environments, and you want to use parameters and conditions to control what gets deployed to each environment.
+
+    - In this exercise, you'll create an Azure SQL logical server and a database. 
+      + You'll then add auditing settings to ensure that auditing is enabled, but you want it enabled only when you're deploying to a production environment.
+      + For auditing purposes, you need to have a storage account, which you'll also deploy only when you're deploying resources to a production environment.
+
+    1. Create a Bicep template with a logical server and database
+    2. Add a storage account
+    3. Add auditing settings
+        ```Bicep
+        resource sqlServerAudit 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+          parent: sqlServer
+          name: 'default'
+          properties: {
+            state: 'Enabled'
+            storageEndpoint: environmentName == 'Production' ? auditStorageAccount.properties.primaryEndpoints.blob : ''
+            storageAccountAccessKey: environmentName == 'Production' ? auditStorageAccount.listKeys().keys[0].value : ''
+          }
+        }
+        ```
+        - NOTICE that the definition includes the same if condition as the storage account. 
+          + Also, the **storageEndpoint** and **storageAccountAccessKey** properties use the question mark (**?**) ternary operator to ensure that their values are always valid. 
+          + If you don't do this, Azure Resource Manager evaluates the expression values before it evaluates the resource deployment condition and returns an error, because the storage account can't be found.
+
+    4. Verify your Bicep file
+        - After you've completed all of the preceding changes, your Bicep file should look like this example:
+        ```Bicep
+        @description('The Azure region into which the resources should be deployed.')
+        param location string
+
+        @secure()
+        @description('The administrator login username for the SQL server.')
+        param sqlServerAdministratorLogin string
+
+        @secure()
+        @description('The administrator login password for the SQL server.')
+        param sqlServerAdministratorLoginPassword string
+
+        @description('The name and tier of the SQL database SKU.')
+        param sqlDatabaseSku object = {
+          name: 'Free'
+          tier: 'Free'
+        }
+
+        @description('The name of the environment. This must be Development or Production.')
+        @allowed([
+          'Development'
+          'Production'
+        ])
+        param environmentName string = 'Development'
+
+        @description('The name of the audit storage account SKU.')
+        param auditStorageAccountSkuName string = 'Standard_LRS'
+
+        var sqlServerName = 'teddy${location}${uniqueString(resourceGroup().id)}'
+        var sqlDatabaseName = 'TeddyBear'
+        var auditingEnabled = environmentName == 'Production'
+        var auditStorageAccountName = take('bearaudit${location}${uniqueString(resourceGroup().id)}', 24)
+
+        resource sqlServer 'Microsoft.Sql/servers@2024-05-01-preview' = {
+          name: sqlServerName
+          location: location
+          properties: {
+            administratorLogin: sqlServerAdministratorLogin
+            administratorLoginPassword: sqlServerAdministratorLoginPassword
+          }
+        }
+
+        resource sqlDatabase 'Microsoft.Sql/servers/databases@2024-05-01-preview' = {
+          parent: sqlServer
+          name: sqlDatabaseName
+          location: location
+          sku: sqlDatabaseSku
+        }
+
+        resource auditStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (auditingEnabled) {
+          name: auditStorageAccountName
+          location: location
+          sku: {
+            name: auditStorageAccountSkuName
+          }
+          kind: 'StorageV2'  
+        }
+
+        resource sqlServerAudit 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+          parent: sqlServer
+          name: 'default'
+          properties: {
+            state: 'Enabled'
+            storageEndpoint: environmentName == 'Production' ? auditStorageAccount.properties.primaryEndpoints.blob : ''
+            storageAccountAccessKey: environmentName == 'Production' ? auditStorageAccount.listKeys().keys[0].value : ''
+          }
+        }
+        ```
+
+    5. Deploy the Bicep template to Azure
+        1. Install Bicep: `az bicep install && az bicep upgrade`
+        2. Sign in to Azure: `az login`
+           - Get the Concierge Subscription IDs: 
+            ```
+            az account list --refresh --query "[?contains(name, 'Concierge Subscription')].id" --output table
+            ```
+
+          - Set the default subscription by using the subscription ID
+            ```
+            az account set --subscription {your subscription ID}
+            ```
+
+        3. Set the default resource group
+          ```
+          az group create --name rg-mslearn --location eastasia
+          az configure --defaults group="[sandbox resource group name]"
+          ```
+
+    6. Deploy the template to Azure by using the Azure CLI
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep --parameters location=eastasia
+        ```
+        - NOTICE:
+          + You're prompted to enter the values for **sqlServerAdministratorLogin** and **sqlServerAdministratorLoginPassword** parameters when you execute the deployment.
+          + TIP:
+            - When you enter the secure parameters, the values you choose must follow certain rules:
+              + **sqlServerAdministratorLogin** must not be an easily guessable login name such as **admin** or **root**.
+                - It can contain only alphanumeric characters and must start with a letter.
+
+              + **sqlServerAdministratorLoginPassword** must be at least eight characters long and include lowercase letters, uppercase letters, numbers, and symbols. 
+                - For more information about password complexity, see the **SQL Azure password policy**.
+                  + https://learn.microsoft.com/en-us/sql/relational-databases/security/password-policy#password-complexity
+              
+              + If the parameter values don't meet the requirements, Azure SQL won't deploy your logical server.
+
+               + Also, be sure to note the login and password that you enter. You'll use them again shortly.
+
+    7. Verify the deployment
+        - Go to Resource group on Azure portal, open deployment section
+
+    8. Redeploy for the production environment
+        1. Deploy the template for the production environment
+            ```Azure CLI
+            az deployment group create --name main --template-file main.bicep --parameters environmentName=Production location=westus3
+            ```
+            - CAUTION:
+              + Be sure to use the same login and password that you used previously, or the deployment won't finish successfully.
+
+        2. Verify the redeployment
+            1. Select your logical server (look for the resource with type SQL server).
+            2. In the search field, enter **Auditing**. Under **Security**, select **Auditing**.
+            3. Verify that auditing is enabled for this logical server
+
+4. Deploy multiple resources by using loops
+    - Often, you need to deploy multiple resources that are very similar. 
+      + By adding loops to your Bicep files, you can avoid having to repeat resource definitions. 
+      + Instead, you can dynamically set the number of instances of a resource you want to deploy.
+      + You can even customize the properties for each instance.
+
+    - For your toy company, you need to deploy back-end infrastructure, including some Azure SQL logical servers, to support the launch of the new smart teddy bear.
+      + You need to deploy a dedicated logical server to each country/region where the toy will be available, so that you're in compliance with each country/region's data-protection laws.
+
+    - Apart from their locations, all logical servers will be configured in the same way.
+      + You want to use Bicep code to deploy your logical servers, and a parameter should allow you to specify the regions into which the logical servers should be deployed.
+
+    - In this unit, you learn how to deploy multiple instances of resources by using **copy loops**.
+
+    1. Use copy loops
+      - **for ... in** keyword
+      - Opening bracket (**[**) character before the for keyword, and a closing bracket (**]**) character after the resource definition.
+
+        ```Bicep
+        param storageAccountNames array = [
+          'saauditus'
+          'saauditeurope'
+          'saauditapac'
+        ]
+
+        resource storageAccountResources 'Microsoft.Storage/storageAccounts@2023-05-01' = [for storageAccountName in storageAccountNames: {
+          name: storageAccountName
+          location: resourceGroup().location
+          kind: 'StorageV2'
+          sku: {
+            name: 'Standard_LRS'
+          }
+        }]
+        ```
+
+    2. Loop based on a count
+      - **range()** function
+        + **range(0,3)**, **range(3)**, **range(3,4) - 3, 4, 5, and 6**
+
+        ```Bicep
+        resource storageAccountResources 'Microsoft.Storage/storageAccounts@2023-05-01' = [for i in range(1,4): {
+          name: 'sa${i}'
+          location: resourceGroup().location
+          kind: 'StorageV2'
+          sku: {
+            name: 'Standard_LRS'
+          }
+        }]
+        ```
+
+    3. Access the iteration index
+        - **[for (location, i) in locations: {}]**
+        ```Bicep
+        param locations array = [
+          'westeurope'
+          'eastus2'
+          'eastasia'
+        ]
+
+        resource sqlServers 'Microsoft.Sql/servers@2024-05-01-preview' = [for (location, i) in locations: {
+          name: 'sqlserver-${i+1}'
+          location: location
+          properties: {
+            administratorLogin: administratorLogin
+            administratorLoginPassword: administratorLoginPassword
+          }
+        }]
+        ```
+
+    4. Filter items with loops
+      - combining the **if** and **for** keywords
+        ```Bicep
+        param sqlServerDetails array = [
+          {
+            name: 'sqlserver-we'
+            location: 'westeurope'
+            environmentName: 'Production'
+          }
+          {
+            name: 'sqlserver-eus2'
+            location: 'eastus2'
+            environmentName: 'Development'
+          }
+          {
+            name: 'sqlserver-eas'
+            location: 'eastasia'
+            environmentName: 'Production'
+          }
+        ]
+
+        resource sqlServers 'Microsoft.Sql/servers@2024-05-01-preview' = [for sqlServer in sqlServerDetails: if (sqlServer.environmentName == 'Production') {
+          name: sqlServer.name
+          location: sqlServer.location
+          properties: {
+            administratorLogin: administratorLogin
+            administratorLoginPassword: administratorLoginPassword
+          }
+          tags: {
+            environment: sqlServer.environmentName
+          }
+        }]
+        ```
+
+5. Exercise - Deploy multiple resources by using loops
+    - So far, your Bicep template has deployed a single Azure SQL logical server, with auditing settings included for your production environment. 
+      + You now need to deploy multiple logical servers, one for each region where your company is launching its new smart teddy bear.
+
+    - In this exercise, you'll extend the Bicep code that you created previously so that you can deploy instances of your databases to multiple Azure regions.
+
+    1. Move resources into a module
+        - Create **modules/database.bicep** and **main.bicep**
+
+    2. Deploy multiple instances by using a copy loop
+
+    3. Verify your Bicep file
+        - **main.bicep**:
+          ```Bicep
+          @description('The Azure regions into which the resources should be deployed.')
+          param locations array = [
+            'westus'
+            'eastus2'
+          ]
+
+          @secure()
+          @description('The administrator login username for the SQL server.')
+          param sqlServerAdministratorLogin string
+
+          @secure()
+          @description('The administrator login password for the SQL server.')
+          param sqlServerAdministratorLoginPassword string
+
+          module databases 'modules/database.bicep' = [for location in locations: {
+            name: 'database-${location}'
+            params: {
+              location: location
+              sqlServerAdministratorLogin: sqlServerAdministratorLogin
+              sqlServerAdministratorLoginPassword: sqlServerAdministratorLoginPassword
+            }
+          }]
+          ```
+
+        - **modules/database.bicep**:
+          ```Bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string
+
+          @secure()
+          @description('The administrator login username for the SQL server.')
+          param sqlServerAdministratorLogin string
+
+          @secure()
+          @description('The administrator login password for the SQL server.')
+          param sqlServerAdministratorLoginPassword string
+
+          @description('The name and tier of the SQL database SKU.')
+          param sqlDatabaseSku object = {
+            name: 'Free'
+            tier: 'Free'
+          }
+
+          @description('The name of the environment. This must be Development or Production.')
+          @allowed([
+            'Development'
+            'Production'
+          ])
+          param environmentName string = 'Development'
+
+          @description('The name of the audit storage account SKU.')
+          param auditStorageAccountSkuName string = 'Standard_LRS'
+
+          var sqlServerName = 'teddy${location}${uniqueString(resourceGroup().id)}'
+          var sqlDatabaseName = 'TeddyBear'
+          var auditingEnabled = environmentName == 'Production'
+          var auditStorageAccountName = take('bearaudit${location}${uniqueString(resourceGroup().id)}', 24)
+
+          resource sqlServer 'Microsoft.Sql/servers@2024-05-01-preview' = {
+            name: sqlServerName
+            location: location
+            properties: {
+              administratorLogin: sqlServerAdministratorLogin
+              administratorLoginPassword: sqlServerAdministratorLoginPassword
+            }
+          }
+
+          resource sqlDatabase 'Microsoft.Sql/servers/databases@2024-05-01-preview' = {
+            parent: sqlServer
+            name: sqlDatabaseName
+            location: location
+            sku: sqlDatabaseSku
+          }
+
+          resource auditStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (auditingEnabled) {
+            name: auditStorageAccountName
+            location: location
+            sku: {
+              name: auditStorageAccountSkuName
+            }
+            kind: 'StorageV2'  
+          }
+
+          resource sqlServerAudit 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+            parent: sqlServer
+            name: 'default'
+            properties: {
+              state: 'Enabled'
+              storageEndpoint: environmentName == 'Production' ? auditStorageAccount.properties.primaryEndpoints.blob : ''
+              storageAccountAccessKey: environmentName == 'Production' ? auditStorageAccount.listKeys().keys[0].value : ''
+            }
+          }
+          ```
+
+    4. Deploy the Bicep template to Azure
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep
+        ```
+
+    5. Verify the deployment
+
+    6. Update and redeploy the template to Azure with an additional location for a logical server
+        - update: add location 'eastasia'
+        - redeploy:
+          ```Azure CLI
+          az deployment group create --name main --template-file main.bicep
+          ```
+
+    7. Verify the redeployment
+
+
+6. Control loop execution and nest loops
+    1. Control loop execution
+        - By default, Azure Resource Manager creates resources from loops in parallel and in a non-deterministic order.
+        - **@batchSize** decorator and **for** keyword
+          ```Bicep
+          @batchSize(2)
+          resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = [for i in range(1,3): {
+            name: 'app${i}'
+            // ...
+          }]
+          ```
+
+    2. Use loops with resource properties
+        - For example, when you deploy a virtual network, you need to specify its subnets. 
+          + A subnet has to have two pieces of important information: a name and an address prefix. 
+        
+        - You can use a parameter with an array of objects so that you can specify different subnets for each environment:
+          ```Bicep
+          param subnetNames array = [
+            'api'
+            'worker'
+          ]
+
+          resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+            name: 'teddybear'
+            location: resourceGroup().location
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  '10.0.0.0/16'
+                ]
+              }
+              // NEW
+              subnets: [for (subnetName, i) in subnetNames: {
+                name: subnetName
+                properties: {
+                  addressPrefix: '10.0.${i}.0/24'
+                }
+              }]
+            }
+          }
+          ```
+
+    3. Nested loops
+        - For your teddy bear toy company, you need to deploy virtual networks in every country/region where the toy will be launched.
+          + Every virtual network needs a different address space and two subnets.
+        - Let's start by deploying the virtual networks in a loop:
+          ```Bicep
+          param locations array = [
+            'westeurope'
+            'eastus2'
+            'eastasia'
+          ]
+
+          var subnetCount = 2
+
+          resource virtualNetworks 'Microsoft.Network/virtualNetworks@2024-05-01' = [for (location, i) in locations : {
+            name: 'vnet-${location}'
+            location: location
+            properties: {
+              addressSpace:{
+                addressPrefixes:[
+                  '10.${i}.0.0/16'
+                ]
+              }
+            }
+          }]
+          ```
+
+        - You can use a nested loop to deploy the subnets within each virtual network:
+          ```Bicep
+          resource virtualNetworks 'Microsoft.Network/virtualNetworks@2024-05-01' = [for (location, i) in locations : {
+            name: 'vnet-${location}'
+            location: location
+            properties: {
+              addressSpace:{
+                addressPrefixes:[
+                  '10.${i}.0.0/16'
+                ]
+              }
+              subnets: [for j in range(1, subnetCount): {
+                name: 'subnet-${j}'
+                properties: {
+                  addressPrefix: '10.${i}.${j}.0/24'
+                }
+              }]
+            }
+          }]
+          ```
+
+        - When you deploy the template, you get the following virtual networks and subnets:
+          ```
+          Virtual network name	  Location	  Address prefix	  Subnets
+          vnet-westeurope	        westeurope	10.0.0.0/16	      10.0.1.0/24, 10.0.2.0/24
+          vnet-eastus2	          eastus2	    10.1.0.0/16	      10.1.1.0/24, 10.1.2.0/24
+          vnet-eastasia	          eastasia	  10.2.0.0/16	      10.2.1.0/24, 10.2.2.0/24
+          ```
+
+7. Use variable and output loops
+    - For your toy company, you need to deploy virtual networks with the same subnet configuration across multiple Azure regions.
+      + You expect that you'll need to add additional subnets to your virtual networks in the future, so you want to have the flexibility in your Bicep templates to modify the subnet configuration.
+
+    - Because you'll also be deploying multiple storage accounts in your Azure environment, you need to provide the endpoints for each storage account as output so that your deployment pipelines can use this information.
+
+    - In this unit, you'll learn how to use loops with variables and outputs.
+
+    1. Variable loops
+        - Usage
+          ```bicep
+          var items = [for i in range(1, 5): 'item${i}']
+          ```
+
+        - You'd ordinarily use variable loops to create more complex objects that you could then use within a resource declaration.
+        - Here's how to use variable loops to create a subnets property:
+          ```Bicep
+          param addressPrefix string = '10.10.0.0/16'
+          param subnets array = [
+            {
+              name: 'frontend'
+              ipAddressRange: '10.10.0.0/24'
+            }
+            {
+              name: 'backend'
+              ipAddressRange: '10.10.1.0/24'
+            }
+          ]
+
+          // NEW
+          var subnetsProperty = [for subnet in subnets: {
+            name: subnet.name
+            properties: {
+              addressPrefix: subnet.ipAddressRange
+            }
+          }]
+
+          resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+            name: 'teddybear'
+            location: resourceGroup().location
+            properties:{
+              addressSpace:{
+                addressPrefixes:[
+                  addressPrefix
+                ]
+              }
+              subnets: subnetsProperty
+            }
+          }
+          ```
+
+
+    2. Output loops
+        - usage
+          ```Bicep
+          var items = [
+            'item1'
+            'item2'
+            'item3'
+            'item4'
+            'item5'
+          ]
+
+          output outputItems array = [for i in range(0, length(items)): items[i]]
+          ```
+
+        - You'll ordinarily use output loops in conjunction with other loops within your template. 
+        - For example, let's look at a Bicep file that deploys a set of storage accounts to Azure regions that are specified by the **locations** parameter:
+          ```Bicep
+          param locations array = [
+            'westeurope'
+            'eastus2'
+            'eastasia'
+          ]
+
+          resource storageAccounts 'Microsoft.Storage/storageAccounts@2023-05-01' = [for location in locations: {
+            name: 'toy${uniqueString(resourceGroup().id, location)}'
+            location: location
+            kind: 'StorageV2'
+            sku: {
+              name: 'Standard_LRS'
+            }
+          }]
+          ```
+
+          + You'll probably need to return information about each storage account that you've created, such as its name and the endpoints that can be used to access it.
+          + NOTE: Currently, Bicep doesn't support directly referencing resources that have been created within a loop from within an output loop. This means that you need to use array indexers to access the resources, as shown in the next example.
+            ```Bicep
+            output storageEndpoints array = [for i in range(0, length(locations)): {
+              name: storageAccounts[i].name
+              location: storageAccounts[i].location
+              blobEndpoint: storageAccounts[i].properties.primaryEndpoints.blob
+              fileEndpoint: storageAccounts[i].properties.primaryEndpoints.file
+            }]
+            ```
+            - CAUTION: Don't use outputs to return secrets, such as access keys or passwords. 
+              + Outputs are logged, and they aren't designed for handling secure data.
+
+8. Exercise - Use variable and output loops
+    - For your toy company, you need to deploy virtual networks in each country/region where you're launching the teddy bear.
+      + Your developers have also asked you to give them the fully qualified domain names (FQDNs) of each of the regional Azure SQL logical servers you've deployed.
+
+    - In this exercise, you'll add the virtual network and its configuration to your Bicep code, and you'll output the logical server FQDNs.
+
+    1. Add the virtual network to your Bicep file
+    2. Add outputs to the database module
+    3. Flow the outputs through the parent Bicep file
+    4. Verify your Bicep file
+        - **main.bicep**:
+          ```Bicep
+          @description('The Azure regions into which the resources should be deployed.')
+          param locations array = [
+            'westeurope'
+            'eastus2'
+            'eastasia'
+          ]
+
+          @secure()
+          @description('The administrator login username for the SQL server.')
+          param sqlServerAdministratorLogin string
+
+          @secure()
+          @description('The administrator login password for the SQL server.')
+          param sqlServerAdministratorLoginPassword string
+
+          @description('The IP address range for all virtual networks to use.')
+          param virtualNetworkAddressPrefix string = '10.10.0.0/16'
+
+          @description('The name and IP address range for each subnet in the virtual networks.')
+          param subnets array = [
+            {
+              name: 'frontend'
+              ipAddressRange: '10.10.5.0/24'
+            }
+            {
+              name: 'backend'
+              ipAddressRange: '10.10.10.0/24'
+            }
+          ]
+
+          var subnetProperties = [for subnet in subnets: {
+            name: subnet.name
+            properties: {
+              addressPrefix: subnet.ipAddressRange
+            }
+          }]
+
+          module databases 'modules/database.bicep' = [for location in locations: {
+            name: 'database-${location}'
+            params: {
+              location: location
+              sqlServerAdministratorLogin: sqlServerAdministratorLogin
+              sqlServerAdministratorLoginPassword: sqlServerAdministratorLoginPassword
+            }
+          }]
+
+          resource virtualNetworks 'Microsoft.Network/virtualNetworks@2024-05-01' = [for location in locations: {
+            name: 'teddybear-${location}'
+            location: location
+            properties:{
+              addressSpace:{
+                addressPrefixes:[
+                  virtualNetworkAddressPrefix
+                ]
+              }
+              subnets: subnetProperties
+            }
+          }]
+
+          output serverInfo array = [for i in range(0, length(locations)): {
+            name: databases[i].outputs.serverName
+            location: databases[i].outputs.location
+            fullyQualifiedDomainName: databases[i].outputs.serverFullyQualifiedDomainName
+          }]
+          ```
+
+        - **modules/database.bicep** file:
+          ```Bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string
+
+          @secure()
+          @description('The administrator login username for the SQL server.')
+          param sqlServerAdministratorLogin string
+
+          @secure()
+          @description('The administrator login password for the SQL server.')
+          param sqlServerAdministratorLoginPassword string
+
+          @description('The name and tier of the SQL database SKU.')
+          param sqlDatabaseSku object = {
+            name: 'Free'
+            tier: 'Free'
+          }
+
+          @description('The name of the environment. This must be Development or Production.')
+          @allowed([
+            'Development'
+            'Production'
+          ])
+          param environmentName string = 'Development'
+
+          @description('The name of the audit storage account SKU.')
+          param auditStorageAccountSkuName string = 'Standard_LRS'
+
+          var sqlServerName = 'teddy${location}${uniqueString(resourceGroup().id)}'
+          var sqlDatabaseName = 'TeddyBear'
+          var auditingEnabled = environmentName == 'Production'
+          var auditStorageAccountName = take('bearaudit${location}${uniqueString(resourceGroup().id)}', 24)
+
+          resource sqlServer 'Microsoft.Sql/servers@2024-05-01-preview' = {
+            name: sqlServerName
+            location: location
+            properties: {
+              administratorLogin: sqlServerAdministratorLogin
+              administratorLoginPassword: sqlServerAdministratorLoginPassword
+            }
+          }
+
+          resource sqlDatabase 'Microsoft.Sql/servers/databases@2024-05-01-preview' = {
+            parent: sqlServer
+            name: sqlDatabaseName
+            location: location
+            sku: sqlDatabaseSku
+          }
+
+          resource auditStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (auditingEnabled) {
+            name: auditStorageAccountName
+            location: location
+            sku: {
+              name: auditStorageAccountSkuName
+            }
+            kind: 'StorageV2'  
+          }
+
+          resource sqlServerAudit 'Microsoft.Sql/servers/auditingSettings@2024-05-01-preview' = if (auditingEnabled) {
+            parent: sqlServer
+            name: 'default'
+            properties: {
+              state: 'Enabled'
+              storageEndpoint: environmentName == 'Production' ? auditStorageAccount.properties.primaryEndpoints.blob : ''
+              storageAccountAccessKey: environmentName == 'Production' ? listKeys(auditStorageAccount.id, auditStorageAccount.apiVersion).keys[0].value : ''
+            }
+          }
+
+          output serverName string = sqlServer.name
+          output location string = location
+          output serverFullyQualifiedDomainName string = sqlServer.properties.fullyQualifiedDomainName
+          ```
+
+    5. Deploy the Bicep template to Azure
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep
+        ```
+        - CAUTION: Be sure to use the same login and password that you used previously, or the deployment won't finish successfully.
+
+    6. Verify the deployment
+        - Check virtual network named **teddybear-eastasia**, subnets, and Outputs
+
+9. Summary
+    - Your toy company wants to launch a new teddy bear toy in multiple countries/regions. 
+      + For compliance reasons, the infrastructure must be spread across all the Azure regions where the toy will be launched.
+
+    - You needed to deploy the same resources in multiple locations and a variety of environments.
+      + You wanted to create flexible Bicep templates that you can reuse, and to control resource deployments by changing the deployment parameters.
+
+    - To deploy some resources only to certain environments, you added conditions to your template. You then used copy loops to deploy resources into various Azure regions.
+      + You used variable loops to define the properties of the resources to be deployed.
+      + Finally, you used output loops to retrieve the properties of those deployed resources.
+
+    - Without the conditions and copy loops features, you'd have to maintain and use multiple versions of Bicep templates.
+      + You'd have to apply every change in your environment in multiple templates.
+      + Maintaining all these templates would entail a great deal of effort and overhead.
+      + By using conditions and loops, you were able to create a single template that works for all your regions and environments and ensure that all your resources are configured identically.
+
+10. Learn more
+    - Conditional deployment in Bicep: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/conditional-resource-deployment
+    - Bicep loops: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/loops
+    - Resources: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/resource-declaration
+    - Modules: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/modules
+    - Variables: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/variables
+    - Outputs: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/outputs
 
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
