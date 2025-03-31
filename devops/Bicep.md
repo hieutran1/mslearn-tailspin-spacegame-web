@@ -3182,6 +3182,2236 @@
 
     - Now you can easily add a CDN into any of the websites that you create, whether or not they're deployed from your website's main template. 
 
+# Part 2: Intermediate Bicep: https://learn.microsoft.com/en-us/training/paths/intermediate-bicep/
+
+## Deploy child and extension resources by using Bicep
+1. Example scenario
+    - Suppose you're responsible for deploying and configuring Azure infrastructure at a toy company.
+      + Your company's R&D department contacts you because they're working on a new toy drone that sprays glitter over unsuspecting targets.
+      + R&D team members are starting to test the drone.
+      + They plan to collect telemetry about the distance the drone can fly, the amount of glitter it can spray, and the battery level.
+
+    - They want you to set up a new Azure Cosmos DB database for storing this valuable and highly sensitive product test data.
+    + They need you to log all database-access attempts so that they can feel confident that no competitors are accessing the data.
+
+    - The team created a storage account to store all their product design documents, and they want you to help audit all attempts to access them.
+
+2. Understand Azure resources
+    - All Azure resources are deployed with a specific type.
+      +  The type identifies the kind of resource it is.
+      + A resource ID is the way Azure identifies a specific instance of a resource.
+      + It's important to understand how resource types and resource IDs are structured, because they give you important information when you're writing Bicep templates.
+
+    1. Resource providers
+        - Azure Resource Manager is designed so that many different **resource providers** can be managed through Resource Manager APIs and ARM templates.
+          + A resource provider is a logical grouping of resource types, which usually relate to one or a few Azure services. 
+        
+        - Examples of resource providers include:
+          + **Microsoft.Compute**: which is used for virtual machines.
+          + **Microsoft.Network**: which is used for networking resources like virtual networks, network security groups, and route tables.
+          + **Microsoft.Cache**: which is used for Azure Cache for Redis.
+          + **Microsoft.Sql**: which is used for Azure SQL.
+          + **Microsoft.Web**: which is used for Azure App Service and Azure Functions.
+          + **Microsoft.DocumentDB**: which is used for Azure Cosmos DB.
+
+    2. Resource types
+        - A resource provider exposes multiple different types. Each resource type has its own set of properties and behaviors that define the resource and what it can do. 
+        - For example, within the **Microsoft.Web** resource provider, there are several resource types, including:
+          + **sites**: Defines an App Service application or Azure Functions application.
+            - Properties include the environment variables that your application uses, and the supported protocols (HTTP and HTTPS) to access the application
+
+          + **serverFarms**: Defines an App Service plan, the infrastructure that runs your applications.
+            - Properties include the size and SKU of the servers, and the number of instances of your plan that you want to deploy.
+
+        - You combine the **resource provider** and **resource type** name to make a fully qualified resource type name.
+          + For example, a storage account’s fully qualified type name is **Microsoft.Storage/storageAccounts**
+
+    3. Resource IDs
+        - Every Azure resource has a unique resource ID.
+          + This ID includes information that helps disambiguate the resource from any other resource of the same type, or even from different resources that might share the same name.
+        - A resource ID for a storage account looks like this:
+          ```
+          /subscriptions/A123b4567c-1234-1a2b-2b1a-1234abc12345/resourceGroups/ToyDevelopment/providers/Microsoft.Storage/storageAccounts/secrettoys
+          ```
+
+3. Define child resources
+    - It makes sense to deploy some resources only within the context of their parent.
+      + These resources are called child resources.
+      + There are many child resource types in Azure.
+    - Here are a few examples:
+      ```
+      Virtual network subnets	      Microsoft.Network/virtualNetworks/subnets
+      App Service configuration	    Microsoft.Web/sites/config
+      SQL databases	                Microsoft.Sql/servers/databases
+      Virtual machine extensions	  Microsoft.Compute/virtualMachines/extensions
+      Storage blob containers	      Microsoft.Storage/storageAccounts/blobServices/containers
+      Azure Cosmos DB containers	  Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers
+      ```
+
+    1. How are child resources defined?
+        - With Bicep, you can declare child resources in several different ways.
+          1. Nested resources
+              - One approach to defining a child resource is to nest the child resource inside the parent.
+                ```bicep
+                resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
+                name: vmName
+                location: location
+                properties: {
+                  // ...
+                }
+
+                // NEW, nested resource
+                resource installCustomScriptExtension 'extensions' = {
+                  name: 'InstallCustomScript'
+                  location: location
+                  properties: {
+                    // ...
+                  }
+                }
+              }
+              ```
+              + You can refer to a nested resource by using the **::** operator
+                ```bicep
+                output childResourceId string = vm::installCustomScriptExtension.id
+                ```
+
+          2. Parent property
+              - A second approach is to use the **parent** property
+                ```bicep
+                resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
+                  name: vmName
+                  location: location
+                  properties: {
+                    // ...
+                  }
+                }
+
+                resource installCustomScriptExtension 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = {
+                  parent: vm
+                  name: 'InstallCustomScript'
+                  location: location
+                  properties: {
+                    // ...
+                  }
+                }
+                ```
+
+          3. Construct the resource name
+              - There are some circumstances where you can't use nested resources or the **parent** keyword.
+              - Examples include when you declare child resources within a **for** loop, or when you need to use complex expressions to dynamically select a parent resource for a child. 
+                + In these situations, you can deploy a child resource by manually constructing the child resource name so that it includes its parent resource name or use **dependsOn** keyword, as shown here:
+                  ```bicep
+                  resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
+                    name: vmName
+                    location: location
+                    properties: {
+                      // ...
+                    }
+                  }
+
+                  resource installCustomScriptExtension 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = {
+                    name: '${vm.name}/InstallCustomScript'
+                    location: location
+                    properties: {
+                      // ...
+                    }
+                  }
+
+                  resource installCustomScriptExtension 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = {
+                    name: '${vmName}/InstallCustomScript'
+                    dependsOn: [
+                      vm
+                    ]
+                    //...
+                  }
+                  ```
+
+              - TIP: It's generally best to avoid constructing resource names, because you lose a lot of the benefits that Bicep can provide when it understands the relationships between your resources.
+                + Use this option only when you can't use one of the other approaches for declaring child resources.
+
+    3. Child resource IDs
+        - For example, let's consider an Azure Cosmos DB account named **toyrnd**
+          ```
+          /subscriptions/A123b4567c-1234-1a2b-2b1a-1234abc12345/resourceGroups/ToyDevelopment/providers/Microsoft.DocumentDB/databaseAccounts/toyrnd
+          ```
+
+        - Let's add a database named **FlightTests** to our Azure Cosmos DB account and take a look at the child resource ID:
+          ```
+          /subscriptions/A123b4567c-1234-1a2b-2b1a-1234abc12345/resourceGroups/ToyDevelopment/providers/Microsoft.DocumentDB/databaseAccounts/toyrnd/sqlDatabases/FlightTests
+          ```
+
+        - You can have multiple levels of child resources. 
+          + Here's an example resource ID that shows a storage account with two levels of children:
+            ```
+            /subscriptions/A123b4567c-1234-1a2b-2b1a-1234abc12345/resourceGroups/ToyDevelopment/providers/Microsoft.Storage/storageAccounts/secrettoys/blobServices/default/containers/glitterspecs
+            ```
+            - **blobServices** indicates that the resource is within a child resource type called **blobServices**
+            - **default** is the name of the blobServices child resource
+            - **containers** indicates that the resource is within a child resource type called **containers**
+            - **glitterspecs** is the name of the blob container
+
+4. Exercise - Define child resources
+    - You're starting to work on your R&D team's requests, and you decide to start by building an Azure Cosmos DB database for the toy drone's test data. 
+      + In this exercise, you create the Azure Cosmos DB account and two child resources, one by using the parent property and the other as a nested resource.
+    
+    1. Create a Bicep template that contains an Azure Cosmos DB account
+        - **main.bicep** file:
+          ```
+          param cosmosDBAccountName string = 'toyrnd-${uniqueString(resourceGroup().id)}'
+          param location string = resourceGroup().location
+
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
+            name: cosmosDBAccountName
+            location: location
+            properties: {
+              databaseAccountOfferType: 'Standard'
+              locations: [
+                {
+                  locationName: location
+                }
+              ]
+            }
+          }
+          ```
+
+    2. Add a database
+    3. Add a container
+    4. Verify your Bicep file
+        - **main.bicep** file:
+          ```bicep
+          param cosmosDBAccountName string = 'toyrnd-${uniqueString(resourceGroup().id)}'
+          param cosmosDBDatabaseThroughput int = 400
+          param location string = resourceGroup().location
+
+          var cosmosDBDatabaseName = 'FlightTests'
+          var cosmosDBContainerName = 'FlightTests'
+          var cosmosDBContainerPartitionKey = '/droneId'
+
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
+            name: cosmosDBAccountName
+            location: location
+            properties: {
+              databaseAccountOfferType: 'Standard'
+              locations: [
+                {
+                  locationName: location
+                }
+              ]
+            }
+          }
+
+          resource cosmosDBDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
+            parent: cosmosDBAccount
+            name: cosmosDBDatabaseName
+            properties: {
+              resource: {
+                id: cosmosDBDatabaseName
+              }
+              options: {
+                throughput: cosmosDBDatabaseThroughput
+              }
+            }
+
+            resource container 'containers' = {
+              name: cosmosDBContainerName
+              properties: {
+                resource: {
+                  id: cosmosDBContainerName
+                  partitionKey: {
+                    kind: 'Hash'
+                    paths: [
+                      cosmosDBContainerPartitionKey
+                    ]
+                  }
+                }
+                options: {}
+              }
+            }
+          }
+          ```
+
+    5. Deploy the template to Azure
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep
+        ```
+
+    6. Verify the deployment
+      - there's a Cosmos DB account, database, and container listed
+
+5. Define extension resources
+    - Extension resources are always attached to other Azure resources. 
+      + They extend the behavior of those resources with extra functionality.
+
+    - Some examples of common extension resources are:
+      ```
+      Role assignments	    Microsoft.Authorization/roleAssignments
+      Policy assignments	  Microsoft.Authorization/policyAssignments
+      Locks	                Microsoft.Authorization/locks
+      Diagnostic settings	  Microsoft.Insights/diagnosticSettings
+      ```
+
+    - For example, consider a lock, which can be used to prevent the deletion or modification of an Azure resource.
+      + It doesn't make sense to deploy a lock by itself.
+      + It always has to be deployed onto another resource.
+
+    1. How are extension resources defined?
+        - add the **scope** property to tell Bicep that the resource should be attached to another resource defined elsewhere in the Bicep file
+
+        - For example, here's the definition of an Azure Cosmos DB account that we created previously:
+          ```bicep
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+            name: cosmosDBAccountName
+            location: location
+            properties: {
+              // ...
+            }
+          }
+          ```
+
+        - Let's add a resource lock, which prevents anybody from deleting the Azure Cosmos DB account:
+          ```bicep
+          resource lockResource 'Microsoft.Authorization/locks@2020-05-01' = {
+            scope: cosmosDBAccount // NEW, block
+            name: 'DontDelete'
+            properties: {
+              level: 'CanNotDelete'
+              notes: 'Prevents deletion of the toy data Cosmos DB account.'
+            }
+          }
+          ```
+          + NOTICE that the example uses the scope property with the Azure Cosmos DB account's symbolic name.
+
+    2. Extension resource IDs
+        - Here's what the lock's resource ID would look like:
+          ```
+          /subscriptions/A123b4567c-1234-1a2b-2b1a-1234abc12345/resourceGroups/ToyDevelopment/providers/Microsoft.DocumentDB/databaseAccounts/toyrnd/providers/Microsoft.Authorization/locks/DontDelete
+          ```
+
+6. Work with existing resources
+    - Bicep files often need to refer to resources that were created elsewhere. 
+      + These resources might be created manually, maybe by a colleague using the Azure portal. 
+      + Or they might be created in another Bicep file. 
+      + There are many reasons why you need to refer to these resources, such as:
+        - You're adding an SQL database into an Azure SQL logical server instance that someone already created.
+        - You're configuring diagnostics settings for resources that are defined in another Bicep module.
+        - You have to securely access the keys for a storage account that was manually deployed into your subscription.
+    
+    - Bicep provides the **existing** keyword for you to use in these situations.
+
+    1. Refer to existing resources
+        ```
+        resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+          name: 'toydesigndocs'
+        }
+        ```
+          - The **name** property is the Azure resource name of the storage account that was previously deployed.
+          - You don't need to specify the **location**, **sku**, or **properties**, because the template doesn't deploy the resource.
+            + It merely references an existing resource.
+            + Think of it as a placeholder resource.
+
+        1. Refer to child resources
+            ```
+            resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' existing = {
+              name: 'toy-design-vnet'
+
+              resource managementSubnet 'subnets' existing = {
+                name: 'management'
+              }
+            }
+            ```
+            - NOTICE that both the parent and child resource have the **existing** keyword applied.
+
+        2. Refer to resources outside the resource group
+            - For example, if you have a virtual network in a centralized resource group, you might want to deploy a virtual machine into that virtual network in its own resource group.
+
+            - use the **scope** keyword to refer to existing resources in a different resource group
+              ```
+              resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' existing = {
+                scope: resourceGroup('networking-rg')
+                name: 'toy-design-vnet'
+              }
+              ```
+              + NOTICE that the **scope** uses the **resourceGroup()** keyword to refer to the resource group that contains the virtual network
+
+            - You can even refer to resources within a different Azure subscription, as long as the subscription is within your Microsoft Entra tenant. 
+              + If your networking team provisions the virtual network in a different subscription, the template could refer to it, as in this example:
+                ```bicep
+                resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' existing = {
+                  scope: resourceGroup('A123b4567c-1234-1a2b-2b1a-1234abc12345', 'networking-rg')
+                  name: 'toy-design-vnet'
+                }
+                ```
+
+    2. Add child and extension resources to an existing resource
+        - You can add a child resource to an already-created parent resource by using a combination of the **existing** keyword and the **parent** keyword.
+
+        - The following example template creates an Azure SQL database within a server that already exists:
+          ```bicep
+          // highlight
+          resource server 'Microsoft.Sql/servers@2024-05-01-preview' existing = {
+            name: serverName
+          }
+
+          resource database 'Microsoft.Sql/servers/databases@2024-05-01-preview' = {
+            parent: server // Highlight
+            name: databaseName
+            location: location
+            sku: {
+              name: 'Standard'
+              tier: 'Standard'
+            }
+          }
+          ```
+
+        - If you need to deploy an extension resource to an existing resource, you can use the **scope** keyword. 
+        - Here's a template that uses the **existing** keyword and the **scope** keyword to add a resource lock to a storage account that already exists:
+          ```bicep
+          // Highlight
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+            name: 'toydesigndocs'
+          }
+
+          resource lockResource 'Microsoft.Authorization/locks@2020-05-01' = {
+            scope: storageAccount // Highlight
+            name: 'DontDelete'
+            properties: {
+              level: 'CanNotDelete'
+              notes: 'Prevents deletion of the toy design documents storage account.'
+            }
+          }
+          ```
+
+    3. Refer to an existing resource's properties
+        - TIP: It's a best practice to look up keys from other resources in this way instead of passing them around through outputs. 
+          + You'll always get the most up-to-date data. 
+          + Also, importantly, outputs are not designed to handle secure data such as keys.
+
+        - The following example template deploys an Azure Functions application, and uses the access details (**instrumentation key**) for an Application Insights instance that was already created:
+          ```bicep
+          resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+            name: applicationInsightsName
+          }
+
+          resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
+            name: functionAppName
+            location: location
+            kind: 'functionapp'
+            properties: {
+              siteConfig: {
+                appSettings: [
+                  // ...
+                  {
+                    name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+                    value: applicationInsights.properties.InstrumentationKey
+                  }
+                ]
+              }
+            }
+          }
+          ```
+
+        - In this example, because the instrumentation key isn't considered sensitive data, it's available in the **properties** of the resource.   
+        - When you need to access secure data, such as the credentials to use to access a resource, use the **listKeys()** function, as shown in the following code:
+          ```bicep
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+            name: storageAccountName
+          }
+
+          resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
+            name: functionAppName
+            location: location
+            kind: 'functionapp'
+            properties: {
+              siteConfig: {
+                appSettings: [
+                  // ...
+                  {
+                    name: 'StorageAccountKey'
+                    value: storageAccount.listKeys().keys[0].value
+                  }
+                ]
+              }
+            }
+          }
+          ```
+          + IMPORTANT: The **listKeys()** function provides access to sensitive data about the resource.
+            - This means that the user or service principal that runs the deployment needs to have the appropriate level of permission on the resource.
+            - This is usually the **Contributor** built-in role, or a custom role that assigns the appropriate permission.
+
+7. Exercise - Deploy extension resources and use existing resources
+    - Now that you finished creating the database for your R&D team to use, you need to ensure that access to the database is logged.
+      + You have an existing Log Analytics workspace that you want these logs to be sent to.
+      + You also need to send the logs from the R&D team's storage account to the same Log Analytics workspace.
+      + In this exercise, you update your Bicep file to meet these requirements.
+
+    - During the process, you'll:
+      + Create a Log Analytics workspace.
+      + Update your Bicep file to add diagnostic settings to your Cosmos DB account.
+      + Create a storage account.
+      + In your Bicep file, update the diagnostic settings for the storage account.
+      + Deploy your template and verify the result.
+
+    1. Create a Log Analytics workspace
+        - Create a Log Analytics workspace to simulate having one already created in your organization
+          ```Azure CLI
+          az monitor log-analytics workspace create --workspace-name ToyLogs --location eastus
+          ```
+          + NOTE: In this example, you're deploying the Log Analytics workspace into the same subscription and resource group as your other resources. 
+            - In many situations, you'll store Log Analytics workspaces in resource groups that aren't the same as your application resources. 
+            - Bicep can still reference them.
+
+    2. Add diagnostics settings for Azure Cosmos DB
+        - Your R&D team needs to log all requests to the Azure Cosmos DB account. 
+          + You decide to use the **Azure Monitor integration for Azure Cosmos DB** to collect the **DataPlaneRequests** log, which contains information about requests to Azure Cosmos DB.
+            - https://learn.microsoft.com/en-us/azure/cosmos-db/cosmosdb-monitor-resource-logs
+
+        - **main.bicep** file:
+          ```bicep
+          var logAnalyticsWorkspaceName = 'ToyLogs'
+          var cosmosDBAccountDiagnosticSettingsName = 'route-logs-to-log-analytics'
+
+          resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+            name: logAnalyticsWorkspaceName
+          }
+
+          resource cosmosDBAccountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+            scope: cosmosDBAccount
+            name: cosmosDBAccountDiagnosticSettingsName
+            properties: {
+              workspaceId: logAnalyticsWorkspace.id
+              logs: [
+                {
+                  category: 'DataPlaneRequests'
+                  enabled: true
+                }
+              ]
+            }
+          }
+          ```
+    
+    3. Create a storage account for toy design documents
+        - Create an Azure storage account to simulate your R&D team's already having created one in your organization. 
+          + Use the Azure CLI instead of Bicep.
+
+            ```Azure CLI
+            az storage account create --name {storageaccountname} --location eastus
+            ```
+
+    4. Add diagnostics settings for storage account
+        - Your R&D team wants you to log all successful requests to the storage account they created.
+          + You decide to use the **Azure Storage integration with Azure Monitor logs** to achieve this goal.
+            - https://learn.microsoft.com/en-us/azure/storage/blobs/monitor-blob-storage
+          + You decide to log all read, write, and delete activities within blob storage on the R&D team's storage account.
+
+        - update **main.bicep** file:
+          ```bicep
+          param storageAccountName string
+
+          var storageAccountBlobDiagnosticSettingsName = 'route-logs-to-log-analytics'
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+            name: storageAccountName
+
+            resource blobService 'blobServices' existing = {
+              name: 'default'
+            }
+          }
+
+          resource storageAccountBlobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+            scope: storageAccount::blobService
+            name: storageAccountBlobDiagnosticSettingsName
+            properties: {
+              workspaceId: logAnalyticsWorkspace.id
+              logs: [
+                {
+                  category: 'StorageRead'
+                  enabled: true
+                }
+                {
+                  category: 'StorageWrite'
+                  enabled: true
+                }
+                {
+                  category: 'StorageDelete'
+                  enabled: true
+                }
+              ]
+            }
+          }
+          ```
+
+    5. Verify your Bicep file
+        - **main.bicep** file:
+          ```bicep
+          param cosmosDBAccountName string = 'toyrnd-${uniqueString(resourceGroup().id)}'
+          param cosmosDBDatabaseThroughput int = 400
+          param location string = resourceGroup().location
+          param storageAccountName string
+
+          var cosmosDBDatabaseName = 'FlightTests'
+          var cosmosDBContainerName = 'FlightTests'
+          var cosmosDBContainerPartitionKey = '/droneId'
+          var logAnalyticsWorkspaceName = 'ToyLogs'
+          var cosmosDBAccountDiagnosticSettingsName = 'route-logs-to-log-analytics'
+          var storageAccountBlobDiagnosticSettingsName = 'route-logs-to-log-analytics'
+
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
+            name: cosmosDBAccountName
+            location: location
+            properties: {
+              databaseAccountOfferType: 'Standard'
+              locations: [
+                {
+                  locationName: location
+                }
+              ]
+            }
+          }
+
+          resource cosmosDBDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
+            parent: cosmosDBAccount
+            name: cosmosDBDatabaseName
+            properties: {
+              resource: {
+                id: cosmosDBDatabaseName
+              }
+              options: {
+                throughput: cosmosDBDatabaseThroughput
+              }
+            }
+
+            resource container 'containers' = {
+              name: cosmosDBContainerName
+              properties: {
+                resource: {
+                  id: cosmosDBContainerName
+                  partitionKey: {
+                    kind: 'Hash'
+                    paths: [
+                      cosmosDBContainerPartitionKey
+                    ]
+                  }
+                }
+                options: {}
+              }
+            }
+          }
+
+          resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+            name: logAnalyticsWorkspaceName
+          }
+
+          resource cosmosDBAccountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+            scope: cosmosDBAccount
+            name: cosmosDBAccountDiagnosticSettingsName
+            properties: {
+              workspaceId: logAnalyticsWorkspace.id
+              logs: [
+                {
+                  category: 'DataPlaneRequests'
+                  enabled: true
+                }
+              ]
+            }
+          }
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+            name: storageAccountName
+
+            resource blobService 'blobServices' existing = {
+              name: 'default'
+            }
+          }
+
+          resource storageAccountBlobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+            scope: storageAccount::blobService
+            name: storageAccountBlobDiagnosticSettingsName
+            properties: {
+              workspaceId: logAnalyticsWorkspace.id
+              logs: [
+                {
+                  category: 'StorageRead'
+                  enabled: true
+                }
+                {
+                  category: 'StorageWrite'
+                  enabled: true
+                }
+                {
+                  category: 'StorageDelete'
+                  enabled: true
+                }
+              ]
+            }
+          }
+          ```
+          
+    6. Deploy the template to Azure
+        ```
+        az deployment group create --name main --template-file main.bicep --parameters storageAccountName={storageaccountname}
+        ```
+
+        1. Check your deployment
+            1. Notice that there are two resources listed with a type of **Microsoft.Insights/diagnosticSettings**.
+                - These resources are the extension resources you deployed. 
+                  + One of the resources was attached to the storage account and the other was attached to the Azure Cosmos DB account.
+                  + Now you can verify that the Azure Cosmos DB diagnostic settings are configured correctly.
+
+                1. Select the Azure Cosmos DB account resource
+                2. In the **Search** box in the top left, enter **Diagnostic settings**, and select the **Diagnostic settings** menu item.
+                3. The Azure portal might prompt you to enable full-text query support for logging. 
+                    - You don't need it for this exercise, so select **Not now**.
+                4. Notice that there's a diagnostic setting named **route-logs-to-log-analytics**, which is configured to route the logs to the **ToyLogs** workspace.
+
+8. Summary
+    - Your R&D team needed a new Azure Cosmos DB database to store the data it collects when it tests the new drone it's developing.
+      + The team asked you to make sure that all successful attempts to access the data are logged. 
+      + The team also wanted you to log access to another storage account that it already created for storing design documents.
+
+    - By using Bicep, you were able to create a template with child resources. 
+      + You used the template to create an Azure Cosmos DB account, database, and container.
+      + You used extension resources to configure the diagnostics settings for the Azure Cosmos DB account and send its logs to a Log Analytics workspace.
+      + You also used the **existing** keyword so that you could add diagnostics settings to the R&D team's storage account.
+
+    - Creating comprehensive and powerful Bicep templates requires you to understand child and extension resources.
+      + Without using these features of the Bicep language, you would be limited in what you can model in your infrastructure as code templates.
+
+9. Learn more
+    - Child resources: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/child-resource-name-type
+    - Extension resources: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/scope-extension-resources
+    - Extension resource types: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/extension-resource-types
+
+## Manage changes to your Bicep code by using Git
+- https://learn.microsoft.com/en-us/training/modules/manage-changes-bicep-code-git
+1. Understand Git
+    1. What are version control and Git?
+        - Version control is a practice by which you maintain a history of changes to your files.
+          + Version control is also sometimes called source code management, or **SCM**.
+
+        - Many different version control systems exist, but generally they have some core features:
+          + Track the changes you make to a file.
+          + View the history of a file, and go back to an older version if you need to revert a change you've made.
+          + Work with multiple versions of a file at the same time.
+          + Collaborate with other team members by sharing your code and changes.
+
+        - Git is an open-source version control system. 
+          + By using Git, you create repositories that maintain history and track changes. 
+          + You can use different repositories for each project, or you might choose to use a single repository for all your Bicep code.
+
+        - You use online services like GitHub and Azure Repos to work with your team on shared code. 
+
+2. Exercise - Initialize a Git repository
+    1. Install Git
+    2. Configure Git
+        ```Bash
+        git --version
+
+        git config --global user.name "USER_NAME"
+        git config --list
+
+        ```
+    3. Create and initialize a Git repository
+        ```Bash
+        mkdir toy-website
+        cd toy-website
+
+        code --reuse-window .
+
+        git init
+        ```
+
+    4. Add a Bicep file
+        ```
+        mkdir deploy
+
+        ```
+        - *main.bicep* file:
+          ```bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string = resourceGroup().location
+
+          @description('The type of environment. This must be nonprod or prod.')
+          @allowed([
+            'nonprod'
+            'prod'
+          ])
+          param environmentType string
+          ```
+
+    5. Inspect the repository status by using the CLI
+        ```
+        git status
+        ```
+
+        - rename branch: `git branch -M main`
+
+3. Commit files and view history
+    1. Folder structure for your repository
+        - When you work with a version control system like Git, it's important to plan how you store your files. It's a good idea to have a clear folder structure.
+
+        - If you're building Bicep code to deploy an application or another solution, it's also a good idea to store your Bicep files in the same repository as the application code and other files. That way, anytime someone needs to add a new feature that changes both Bicep and application code, they'll be tracked together.
+
+        - Planning your folder structure also makes it easier to deploy your solution from a pipeline. You'll learn about pipelines in a future module.
+
+        - Different teams have different conventions for how they set up their repository folders and files. Even if you aren't working with a team, it's still a good idea to decide on a convention to follow. A good file and folder structure will help anyone who has to work with your code in future.
+
+        - If your team doesn't already have a preference, here's a suggestion for how you might do it:
+
+          + At the root of your repository, create a **README.md** file.
+            - This text file, written in Markdown, describes the repository's contents and gives instructions to help team members work in the repository.
+          + At the root of your repository, create a **deploy** folder. Inside the folder:
+          + Store your main Bicep template, named **main.bicep**.
+          + Create a **modules** subfolder, to store your Bicep modules.
+          + If you have other scripts or files that are used during deployments, store them in the **deploy** folder.
+          + At the root of your repository, create a **src** folder for source code. Use it to store application code.
+          + At the root of your repository, create a **docs** folder. Use it to store documentation about your solution.
+          
+        - Here's an illustration of how this structure might look for your toy company's website:
+          ```structured repos
+          toy-website
+            --> README.md
+            --> deploy
+                --> main.bicep
+                --> modules
+                    --> app-service.bicep
+                    --> cosmos-db.bicep
+            --> docs
+                --> solution-architecture.md
+            --> src
+                --> index.html
+          ```
+
+    2. Stage your changes
+        ```
+        git add .
+        git add deploy/main.bicep
+        ```
+    3. Commit the staged changes
+        ```bash
+        git commit --message "Add Cosmos DB account definition"
+        ```
+        - Make your commit messages short, but make them descriptive. 
+          + When you or a team member reviews the commit history in the future, each commit message should explain what the change was and why you made it.
+
+        - There aren't any rules about what commit messages need to contain or how they're formatted. 
+          + But conventionally, they're written in the present tense and in a full sentence, as if you're giving orders to your codebase.
+
+        - Here are some examples of good commit messages:
+          + *Update App Service configuration to add network configuration.*
+          + *Remove storage account since it's been replaced by a Cosmos DB database.*
+          + *Add Application Insights resource definition and integrate with function app.*
+
+
+    4. View a file's history
+        ```
+        git log --pretty=oneline
+
+        git log deploy/main.bicep
+        ```
+
+4. Exercise - Commit files to your repository and view their history
+    1. Commit the Bicep file by using the Git CLI
+        ```
+        git add deploy/main.bicep
+        git commit --message "Add first version of Bicep template"
+        ```
+
+    2. Add a Bicep module
+        1. add *deploy/modules/app-service.bicep* file
+            ```bicep
+            @description('The Azure region into which the resources should be deployed.')
+            param location string
+
+            @description('The type of environment. This must be nonprod or prod.')
+            @allowed([
+              'nonprod'
+              'prod'
+            ])
+            param environmentType string
+
+            @description('The name of the App Service app. This name must be globally unique.')
+            param appServiceAppName string
+
+            var appServicePlanName = 'toy-website-plan'
+            var appServicePlanSkuName = (environmentType == 'prod') ? 'P2v3' : 'F1'
+            var appServicePlanTierName = (environmentType == 'prod') ? 'PremiumV3' : 'Free'
+
+            resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+              name: appServicePlanName
+              location: location
+              sku: {
+                name: appServicePlanSkuName
+                tier: appServicePlanTierName
+              }
+            }
+
+            resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+              name: appServiceAppName
+              location: location
+              properties: {
+                serverFarmId: appServicePlan.id
+                httpsOnly: true
+              }
+            }
+            ```
+
+        2. Edit *deploy/main.bicep* file:
+            ```bicep
+            @description('The name of the App Service app. This name must be globally unique.')
+            param appServiceAppName string = 'toyweb-${uniqueString(resourceGroup().id)}'
+
+            module appService 'modules/app-service.bicep' = {
+              name: 'app-service'
+              params: {
+                location: location
+                environmentType: environmentType
+                appServiceAppName: appServiceAppName
+              }
+            }
+            ```
+
+    3. Compare the differences
+    4. Commit the updated Bicep code
+        ```
+        git commit -m 'Add App Service module'
+        ```
+
+    5. View the commit history by using the Git CLI
+        ```
+        git log --pretty=oneline
+
+          --> 238b0867f533e14bcaabbade31b9d9e1bda6123b (HEAD -> main) Add App Service module
+              9e41f816bf0f5c590cee88590aacc977f1361124 Add first version of Bicep template
+        ```
+
+    6. View a file's history by using Visual Studio Code
+        - Right-click *main.bicep* file, select **Open Timeline**
+
+5. Branch and merge your changes
+    - When you work on Bicep code, it's common to need to do more than one thing at a time.
+    - For example, here are two scenarios for working with your toy company's website:
+        + Your website's development team wants your help in updating Bicep files with significant changes. 
+          - However, the team doesn't want those changes to go live yet.
+          - You need to be able to make minor tweaks to the current live version of the website in parallel with the work on the new version.
+        
+        + You're working on experimental changes that you think will help to improve the performance of the website.
+          - However, these changes are preliminary.
+          - You don't want to apply them to the live version of the website until you're ready.
+
+    1. What are branches?
+    2. Create and check out a branch
+        - create a new branch: `git checkout -b my-experimental-changes`
+
+        - switch to an existing branch: `git checkout main`
+    3. Work on a branch
+    4. Merge branches
+        ```
+        git checkout main
+        git merge my-experimental-changes
+        git branch -d my-experimental-changes
+        ```
+
+    5. Merge conflicts
+    6. Git workflows
+        - trunk-based development
+
+6. Exercise - Create and merge a branch
+    1. Create and check out a branch in your repository
+        ```
+        git checkout -b add-database
+        ```
+
+    2. Update a file on your branch
+        - update *deploy/modules/cosmos-db.bicep* file
+          ```bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string
+
+          @description('The type of environment. This must be nonprod or prod.')
+          @allowed([
+            'nonprod'
+            'prod'
+          ])
+          param environmentType string
+
+          @description('The name of the Cosmos DB account. This name must be globally unique.')
+          param cosmosDBAccountName string
+
+          var cosmosDBDatabaseName = 'ProductCatalog'
+          var cosmosDBDatabaseThroughput = (environmentType == 'prod') ? 1000 : 400
+          var cosmosDBContainerName = 'Products'
+          var cosmosDBContainerPartitionKey = '/productid'
+
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
+            name: cosmosDBAccountName
+            location: location
+            properties: {
+              databaseAccountOfferType: 'Standard'
+              locations: [
+                {
+                  locationName: location
+                }
+              ]
+            }
+          }
+
+          resource cosmosDBDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
+            parent: cosmosDBAccount
+            name: cosmosDBDatabaseName
+            properties: {
+              resource: {
+                id: cosmosDBDatabaseName
+              }
+              options: {
+                throughput: cosmosDBDatabaseThroughput
+              }
+            }
+
+            resource container 'containers' = {
+              name: cosmosDBContainerName
+              properties: {
+                resource: {
+                  id: cosmosDBContainerName
+                  partitionKey: {
+                    kind: 'Hash'
+                    paths: [
+                      cosmosDBContainerPartitionKey
+                    ]
+                  }
+                }
+                options: {}
+              }
+            }
+          }
+          ```
+
+      - update *deploy/main.bicep* file:
+          ```
+          @description('The name of the Cosmos DB account. This name must be globally unique.')
+          param cosmosDBAccountName string = 'toyweb-${uniqueString(resourceGroup().id)}'
+
+          module cosmosDB 'modules/cosmos-db.bicep' = {
+            name: 'cosmos-db'
+            params: {
+              location: location
+              environmentType: environmentType
+              cosmosDBAccountName: cosmosDBAccountName
+            }
+          }
+          ```
+
+    3. Review the differences and commit the changes
+
+7. Publish your repository to enable collaboration
+    1. What are GitHub and Azure Repos?
+        - Git is software that you install and run on your own computer.
+          + Git keeps track of the changes you make to your files. It enables features like branching.
+
+        - GitHub and Azure Repos are online services that keep copies of your Git repository and enable collaborative development.
+
+    2. Local and remote repositories
+        - Conventionally, the term **origin** refers to the remote repository that your local repository synchronizes with.
+
+8. Exercise - Publish your repository
+    1. Configure your local Git repository
+        ```
+        git checkout main
+
+        git remote add origin YOUR_REPOSITORY_URL
+
+        git remote -v
+          --> origin https://myuser@dev.azure.com/myuser/toy-website/_git/toy-website (fetch)
+              origin https://myuser@dev.azure.com/myuser/toy-website/_git/toy-website (push)
+        ```
+
+    2. Push your changes by using the Git CLI
+        ```
+        git push -u origin main
+        ```
+
+9. Learn more
+    - The following features of Git are useful when you work with infrastructure as code:
+
+        + **Staging your changes**, which enables you to commit only some of the things you've changed while leaving others out of the commit.
+          - https://code.visualstudio.com/docs/introvideos/versioncontrol
+
+        + **Stashing your changes**, which enables you to keep your changes without committing them.
+          - https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning
+
+        + **Undoing changes**, including reverting commits and resetting your repository status.
+          - https://git-scm.com/book/en/v2/Git-Basics-Undoing-Things
+
+        + **Branches**, including **handling merge conflicts**, **advanced merging**, and **rebasing**.
+          - Branches: https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging
+          - https://docs.github.com/github/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line
+          - https://git-scm.com/book/en/v2/Git-Tools-Advanced-Merging
+          - https://git-scm.com/book/en/v2/Git-Branching-Rebasing
+
+        + **Branching workflows** to support your team's ways of working.
+          - We introduced **trunk-based development** in this module, but some teams prefer the **GitHub Flow** model.
+          - GitHub Flow: https://git-scm.com/book/en/v2/Git-Branching-Branching-Workflows
+          - **Consider some best practices when selecting your branching strategy**
+            + https://learn.microsoft.com/en-us/azure/devops/repos/git/git-branching-guidance
+
+        + **Rewriting history**, including amending commit messages and removing information from your commit history, and squashing changes.
+          - https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History
+
+        + **Submodules**: https://git-scm.com/book/en/v2/Git-Tools-Submodules
+
+## Structure your Bicep code for collaboration
+- https://learn.microsoft.com/en-us/training/modules/structure-bicep-code-collaboration
+
+1. Example scenario
+    - Suppose you're an Azure infrastructure administrator at a toy company.
+      + You and your team have standardized on using Bicep for your Azure deployments, and you've built a library of reusable templates.
+
+    - Two members of the quality control team have been tasked to run a customer survey.
+      + To accomplish this, they need to deploy a new website and database.
+      + They're on a tight deadline, and they want to avoid building a whole new template if they don't have to.
+      + After you've spoken with them about their requirements, you remember that you already have a template that's close to what they need.
+
+    - The template is one of the first Bicep files you wrote, so you're worried that it might not be ready for them to use.
+      + The question is, how can you revise the template to ensure that it's correct, easy to understand, easy to read, and easy to modify?
+
+2. Exercise - Review your existing Bicep template
+    - Take a look at the following template, which you're seeing for the first time. 
+      + Do you understand what everything in the template is doing? 
+      + How many issues can you find?
+      + What could you do to improve the template?
+
+      ```Bicep
+      param location string = resourceGroup().location
+
+      @allowed([
+        'F1'
+        'D1'
+        'B1'
+        'B2'
+        'B3'
+        'S1'
+        'S2'
+        'S3'
+        'P1'
+        'P2'
+        'P3'
+        'P4'
+      ])
+      param skuName string = 'F1'
+
+      @minValue(1)
+      param skuCapacity int = 1
+      param sqlAdministratorLogin string
+
+      @secure()
+      param sqlAdministratorLoginPassword string
+
+      param managedIdentityName string
+      param roleDefinitionId string = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      param webSiteName string = 'webSite${uniqueString(resourceGroup().id)}'
+      param container1Name string = 'productspecs'
+      param productmanualsName string = 'productmanuals'
+
+      var hostingPlanName = 'hostingplan${uniqueString(resourceGroup().id)}'
+      var sqlserverName = 'toywebsite${uniqueString(resourceGroup().id)}'
+      var storageAccountName = 'toywebsite${uniqueString(resourceGroup().id)}'
+
+      resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+        name: storageAccountName
+        location: 'eastus'
+        sku: {
+          name: 'Standard_LRS'
+        }
+        kind: 'StorageV2'
+        properties: {
+          accessTier: 'Hot'
+        }
+
+        resource blobServices 'blobServices' existing = {
+          name: 'default'
+        }
+      }
+
+      resource container1 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+        parent: storageAccount::blobServices
+        name: container1Name
+      }
+
+      resource sqlserver 'Microsoft.Sql/servers@2023-08-01-preview' = {
+        name: sqlserverName
+        location: location
+        properties: {
+          administratorLogin: sqlAdministratorLogin
+          administratorLoginPassword: sqlAdministratorLoginPassword
+          version: '12.0'
+        }
+      }
+
+      var databaseName = 'ToyCompanyWebsite'
+      resource sqlserverName_databaseName 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+        name: '${sqlserver.name}/${databaseName}'
+        location: location
+        sku: {
+          name: 'Basic'
+        }
+        properties: {
+          collation: 'SQL_Latin1_General_CP1_CI_AS'
+          maxSizeBytes: 1073741824
+        }
+      }
+
+      resource sqlserverName_AllowAllAzureIPs 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+        name: '${sqlserver.name}/AllowAllAzureIPs'
+        properties: {
+          endIpAddress: '0.0.0.0'
+          startIpAddress: '0.0.0.0'
+        }
+        dependsOn: [
+          sqlserver
+        ]
+      }
+
+      resource productmanuals 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+        name: '${storageAccount.name}/default/${productmanualsName}'
+      }
+      resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+        name: hostingPlanName
+        location: location
+        sku: {
+          name: skuName
+          capacity: skuCapacity
+        }
+      }
+
+      resource webSite 'Microsoft.Web/sites@2023-12-01' = {
+        name: webSiteName
+        location: location
+        properties: {
+          serverFarmId: hostingPlan.id
+          siteConfig: {
+            appSettings: [
+              {
+                name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+                value: AppInsights_webSiteName.properties.InstrumentationKey
+              }
+              {
+                name: 'StorageAccountConnectionString'
+                value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value}'
+              }
+            ]
+          }
+        }
+        identity: {
+          type: 'UserAssigned'
+          userAssignedIdentities: {
+            '${msi.id}': {}
+          }
+        }
+      }
+
+      // We don't need this anymore. We use a managed identity to access the database instead.
+      //resource webSiteConnectionStrings 'Microsoft.Web/sites/config@2020-06-01' = {
+      //  name: '${webSite.name}/connectionstrings'
+      //  properties: {
+      //    DefaultConnection: {
+      //      value: 'Data Source=tcp:${sqlserver.properties.fullyQualifiedDomainName},1433;Initial Catalog=${databaseName};User Id=${sqlAdministratorLogin}@${sqlserver.properties.fullyQualifiedDomainName};Password=${sqlAdministratorLoginPassword};'
+      //      type: 'SQLAzure'
+      //    }
+      //  }
+      //}
+
+      resource msi 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-07-31-preview' = {
+        name: managedIdentityName
+        location: location
+      }
+
+      resource roleassignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+        name: guid(roleDefinitionId, resourceGroup().id)
+
+        properties: {
+          principalType: 'ServicePrincipal'
+          roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionId)
+          principalId: msi.properties.principalId
+        }
+      }
+
+      resource AppInsights_webSiteName 'Microsoft.Insights/components@2020-02-02' = {
+        name: 'AppInsights'
+        location: location
+        kind: 'web'
+        properties: {
+          Application_Type: 'web'
+        }
+      }
+      ```
+
+    1. Create and save the Bicep file
+        - you'll make changes that improve the template. 
+          + You'll follow best practices to make it easier to read and understand, and easier for your colleagues to work with.
+
+        - IMPORTANT: The process of improving code by reorganizing and renaming it is called **refactoring**.
+          + When you refactor code, it's a good idea to use a version-control system such as Git.
+          + With version control, you can make changes to your code, undo those changes, or return to a previous version.
+
+3. Improve parameters and names
+    - Parameters are the most common way that your colleagues will interact with your template. 
+      + When they deploy your template, they need to specify values for the parameters.
+      + After it's created, a resource's name provides important information about its purpose to anyone who looks at your Azure environment.
+
+    1. How understandable are the parameters?
+        - For example, suppose you need to deploy a storage account by using a Bicep file.
+          + One of the required properties of the storage account is the stock keeping unit (SKU), which defines the level of data redundancy.
+          + The SKU has several properties, the most important being **name**.
+          + When you create a parameter to set the value for the storage account's SKU, use a clearly defined name, such as **storageAccountSkuName**. 
+          + Using this value instead of a generic name like **sku** or **skuName** will help others understand the purpose of the parameter and the effects of setting its value.
+
+        - Default values are an important way to make your template usable by others.
+          + It's important to use default values where they make sense.
+          + They help your template's users in two ways:
+            - Default values simplify the process of deploying your template. 
+            - Default values provide an example of how you expect the parameter value to look.
+
+        - Bicep can also help to validate the input that users provide through **parameter decorators**.
+        - Bicep provides several types of parameter decorators:
+          + **Descriptions**: provide human-readable information about the purpose of the parameter and the effects of setting its value.
+
+          + **Value constraints**: enforce limits on what users can enter for the parameter's value.
+            - *@allowed()*, *@minValue()* and *@maxValue()*, *@minLength()* and *@maxLength()*
+            - TIP: Be careful when you use the *@allowed()* parameter decorator to specify SKUs.
+              + Azure services often add new SKUs, and you don't want your template to unnecessarily prohibit their use.
+              + Consider using Azure Policy to enforce the use of specific SKUs, and use the *@allowed()* decorator with SKUs only when there are functional reasons why your template's users shouldn't select a specific SKU.
+                - For example, the features that your template needs might not be available in that SKU.
+                - Explain this by using a *@description()* decorator or comment that makes the reasons clear to anyone in future.
+
+          + **Metadata**: although not commonly used, can be applied to provide extra custom metadata about the parameter.
+
+    2. How flexible should a Bicep file be?
+        - One of the goals of defining your infrastructure as code is to make your templates reusable and flexible. 
+        - When you're planning a template, consider how you'll balance flexibility with simplicity.
+        - There are two common ways to provide parameters in templates:
+          + Provide free-form configuration options
+          + Use predefined configuration sets
+
+        - Let's consider both approaches by using an example Bicep file that deploys a storage account and an Azure App Service plan.
+          1. Provide free-form configuration options
+              - Both the App Service plan and the storage account require that you specify their SKUs.
+              - You might consider creating a set of parameters to control each of the SKUs and instance counts for the resources:
+                ```Bicep
+                param appServicePlanSkuName string
+                param appServicePlanSkuCapacity int
+                param storageAccountSkuName string
+
+                resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+                  name: appServicePlanName
+                  location: location
+                  sku: {
+                    name: appServicePlanSkuName
+                    capacity: appServicePlanSkuCapacity
+                  }
+                }
+
+                resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+                  name: storageAccountSkuName
+                  location: location
+                  sku: {
+                    name: storageAccountSkuName
+                  }
+                }
+                ```
+
+          2. Use predefined configuration sets
+              - Alternatively, you could provide a **configuration set**: a single parameter, whose value is a restricted list of allowed values, such as a list of environment types.
+                + When users deploy your template, they need to select a value for only this one parameter.
+                + When they select a value for the parameter, the deployment automatically inherits a set of configuration:
+                ```bicep
+                @allowed([
+                  'Production'
+                  'Test'
+                ])
+                param environmentType string = 'Test'
+
+                // create a map variable to define the specific properties to set on various resources
+                var environmentConfigurationMap = {
+                  Production: {
+                    appServicePlan: {
+                      sku: {
+                        name: 'P2V3'
+                        capacity: 3
+                      }
+                    }
+                    storageAccount: {
+                      sku: {
+                        name: 'ZRS'
+                      }
+                    }
+                  }
+                  Test: {
+                    appServicePlan: {
+                      sku: {
+                        name: 'S2'
+                        capacity: 1
+                      }
+                    }
+                    storageAccount: {
+                      sku: {
+                        name: 'LRS'
+                      }
+                    }
+                  }
+                }
+                ```
+
+                ```bicep
+                resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+                  name: appServicePlanName
+                  location: location
+                  sku: environmentConfigurationMap[environmentType].appServicePlan.sku
+                }
+                ```
+
+    3. How are your resources named?
+        1. Symbolic names
+            - are used only within the Bicep file and don't appear on your Azure resources. 
+        2. Resource names
+            - are the names of the resources that are created in Azure.
+            - Many resources have constraints on their names, and many require their names to be unique.
+            - Important: You can't rename resources after they're deployed.
+            -  Cloud Adoption Framework for Azure has specific guidance:
+              + https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/naming-and-tagging
+            -  every Azure resource has certain naming **rules and restrictions**
+              + https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules
+
+            - TIP: It's better to use uniqueness suffixes rather than prefixes.
+              + This approach makes it easier to sort and to quickly scan your resource names. 
+              + Also, some Azure resources have restrictions about the first character of the name, and randomly generated names can sometimes violate these restrictions.
+
+            - NOTE: Not every resource requires a globally unique name. 
+              + Consider whether you include the uniqueness suffix in the names of every resource or just those that need it.
+
+4. Plan the structure of your Bicep file
+    1. What order should your Bicep code follow?
+        - There are two main approaches to ordering your code:
+          + Group elements by element type
+          + Group elements by resource
+        
+        1. Group elements by element type
+            - You can group all elements of the same type together. 
+            - All your parameters would go in one place, usually at the top of the file.
+            - Variables come next, followed by resources and modules, and outputs are at the bottom. 
+
+        2. Group elements by resource
+            - Alternatively, you can group your elements based on the type of resources you're deploying.
+              + Continuing the preceding example, you could group all the parameters, variables, resources, and outputs that relate to the Azure SQL database resources.
+              + You could then add the parameters, variables, resources, and outputs for the storage account
+
+    2. How can white space help create structure?
+        - Blank lines, or white space, can help you add visual structure to your template.
+        - consider adding a blank line between major sections.
+
+    3. How do you define several similar resources?
+        - you can use loops to deploy similar resources from a single definition by using **for** keyword.
+          ```bicep
+          var cosmosDBContainerDefinitions = [
+            {
+              name: 'customers'
+              partitionKey: '/customerId'
+            }
+            {
+              name: 'orders'
+              partitionKey: '/orderId'
+            }
+            {
+              name: 'products'
+              partitionKey: '/productId'
+            }
+          ]
+
+          resource cosmosDBContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = [for cosmosDBContainerDefinition in cosmosDBContainerDefinitions: {
+            parent: cosmosDBDatabase
+            name: cosmosDBContainerDefinition.name
+            properties: {
+              resource: {
+                id: cosmosDBContainerDefinition.name
+                partitionKey: {
+                  kind: 'Hash'
+                  paths: [
+                    cosmosDBContainerDefinition.partitionKey
+                  ]
+                }
+              }
+              options: {}
+            }
+          }]
+          ```
+    
+    4. How do you deploy resources only to certain environments?
+        - use **if** keyword:
+          ```bicep
+          var environmentConfigurationMap = {
+            Production: {
+              enableLogging: true
+            }
+            Test: {
+              enableLogging: false
+            }
+          }
+
+          resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (environmentConfigurationMap[environmentType].enableLogging) {
+            name: logAnalyticsWorkspaceName
+            location: location
+          }
+
+          resource cosmosDBAccountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (environmentConfigurationMap[environmentType].enableLogging) {
+            scope: cosmosDBAccount
+            name: cosmosDBAccountDiagnosticSettingsName
+            properties: {
+              workspaceId: logAnalyticsWorkspace.id
+              // ...
+            }
+          }
+          ```
+
+    5. How do you express dependencies between your resources?
+        - use **dependsOn** property
+        - use the symbolic name of one resource within a property of another.
+    
+    6. How do you express parent-child relationships?
+        - For example, an Azure SQL database is a child of a SQL server instance.
+        - use **parent** property
+
+    7. How do you set resource properties?
+        - consider defining resource properties as parameters or variables to make your Bicep code more dynamic and reusable.
+        - TIP: When creating outputs, try to use resource properties wherever you can.
+          + Avoid incorporating your own assumptions about how resources work, because these assumptions might change over time.
+
+    8. How do you use version control effectively?
+        - Git
+
+5. Document your code by adding comments and metadata
+    - Good Bicep code is **self-documenting**. 
+      + This means that it uses clear naming and a good structure so that when colleagues read your code, they can quickly understand what's happening.
+
+    1. Add comments to your code
+        - Single-line comments: *//*
+        - Multi-line comments: __/* ... */__ characters
+
+        - You can also use Bicep comments to add a structured multi-line block at the beginning of each file.
+          + Think of it as a manifest. 
+          + Your team might decide that each template and module should have a manifest that describes the purpose of the template and what it contains, such as in this example:
+            ```Bicep
+            /*
+              SYNOPSIS: Module for provisioning Azure SQL server and database.
+              DESCRIPTION: This module provisions an Azure SQL server and a database, and configures the server to accept connections from within Azure.
+              VERSION: 1.0.0
+              OWNER TEAM: Website
+            */
+            ```
+
+    2. Add comments to parameter files
+        - use **.JSONC** instead of **.JSON** file
+          ```JSONC
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "productStockCheckApiUrl": {
+                "value": "https://x73.mytoycompany.com/e4/j7" // This is the URL to the product stock API in the development environment.
+              }
+            }
+          }
+          ```
+
+    3. Add descriptions to parameters, variables, and outputs
+        ```Bicep
+        @description('The Azure region into which the resources should be deployed.')
+        param location string = resourceGroup().location
+
+        @description('Indicates whether the web application firewall policy should be enabled.')
+        var enableWafPolicy = (environmentType == 'prod')
+
+        @description('The default host name of the App Service app.')
+        output hostName string = app.properties.defaultHostName
+        ```
+
+        - Descriptions are more powerful than comments because they are shown whenever someone hovers over a symbolic name.
+
+    4. Add descriptions to resources
+        - apply the **@description()** decorator to resources.
+        - For example, many Azure Policy resources and Azure role-based access control (RBAC) role assignments include a description property.
+            ```Bicep
+            resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+              scope: storageAccount
+              name: guid(roleDefinitionId, resourceGroup().id)
+              properties: {
+                principalType: 'ServicePrincipal'
+                roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionId)
+                principalId: principalId
+                description: 'Contributor access on the storage account is required to enable the application to create blob containers and upload blobs.'
+              }
+            }
+            ```
+
+    5. Apply resource tags
+        - there are many situations where you need to track information about your deployed Azure resources, including:
+          + Allocating your Azure costs to specific cost centers.
+          + Understanding how the data that's contained in databases and storage accounts should be classified and protected.
+          + Recording the name of the team or person who's responsible for management of the resource.
+          + Tracking the name of the environment that the resource relates to, such as production or development.
+
+        - **Resource tags** allow you to store important metadata about resources.
+            ```bicep
+            resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+              name: storageAccountName
+              location: location
+
+              // HIGHLIGHT
+              tags: {
+                CostCenter: 'Marketing'
+                DataClassification: 'Public'
+                Owner: 'WebsiteTeam'
+                Environment: 'Production'
+              }
+              sku: {
+                name: storageAccountSkuName
+              }
+              kind: 'StorageV2'
+              properties: {
+                accessTier: 'Hot'
+              }
+            }
+            ```
+
+        - It's common to use the same set of tags for all your resources, so it's often a good idea to define your tags as parameters or variables
+          ```Bicep
+          param tags object = {
+            CostCenter: 'Marketing'
+            DataClassification: 'Public'
+            Owner: 'WebsiteTeam'
+            Environment: 'Production'
+          }
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+            tags: tags
+          }
+
+          resource appServiceApp 'Microsoft.Web/sites@2023-12-01' = {
+            tags: tags
+          }
+          ```
+
+6. Exercise - Refactor your Bicep file
+    1. Update the parameters
+        - TIP: VSCode, use **Find All References** and **F2** to rename.
+        - *skuName* and  *skuCapacity* params are not clear.
+        - *managedIdentityName* parameter doesn't have a default value.
+
+    2. Add a configuration set
+        - use specific SKUs for each resource, depending on the environment being deployed.
+          ```
+          Resource	        SKU for production	  SKU for non-production
+          App Service plan	S1, two instances	    F1, one instance
+          Storage account	  GRS	                  LRS
+          SQL database	    S1	                  Basic
+          ```
+
+    3. Update the symbolic names
+        1. a variety of capitalization styles for their symbolic names
+            - *storageAccount* and *webSite*, which use camelCase capitalization.
+            - *roleassignment* and *sqlserver*, which use flat case capitalization.
+            - *sqlserverName_databaseName* and *AppInsights_webSiteName*, which use snake case capitalization.
+
+        2. Look at this role assignment resource: *roleassignment*
+            - Is the symbolic name descriptive enough?
+            - The reason the identity needs a role assignment is that the web app uses its managed identity to connect to the database server.
+
+        3. A few resources have symbolic names that don't reflect the current names of Azure resources:
+            - *hostingPlan*, *webSite*, *msi*
+
+    4. Simplify the blob container definitions
+        1. Look at how the blob containers are defined:
+            ```bicep
+            resource container1 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+              parent: storageAccount::blobServices
+              name: container1Name
+            }
+
+            resource productmanuals 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+              name: '${storageAccount.name}/default/${productmanualsName}'
+            }
+            ```
+            - One of them uses the parent property, and the other doesn't. Can you fix these to be consistent?
+
+        2. The blob container names won't change between environments. Do you think the names need to be specified by using parameters?
+        3. There are two blob containers. Could they be deployed by using a loop?
+
+    4. Update the resource names
+        1. There are some parameters that explicitly set resource names:
+            ```Bicep
+            param managedIdentityName string
+            param roleDefinitionId string = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+            param webSiteName string = 'webSite${uniqueString(resourceGroup().id)}'
+            param container1Name string = 'productspecs'
+            param productmanualsName string = 'productmanuals'
+            ```
+            - Is there another way you could do this?
+            - CAUTION: Remember that resources can't be renamed once they're deployed.
+
+        2. Your SQL logical server's resource name is set using a variable, even though it needs a globally unique name:
+            ```bicep
+            var sqlserverName = 'toywebsite${uniqueString(resourceGroup().id)}'
+            ```
+
+    5. Update dependencies and child resources
+        ```bicep
+        resource sqlserverName_databaseName 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+          // LOOK
+          name: '${sqlserver.name}/${databaseName}'
+          location: location
+          sku: {
+            name: 'Basic'
+          }
+          properties: {
+            collation: 'SQL_Latin1_General_CP1_CI_AS'
+            maxSizeBytes: 1073741824
+          }
+        }
+
+        resource sqlserverName_AllowAllAzureIPs 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+          name: '${sqlserver.name}/AllowAllAzureIPs'
+          properties: {
+            endIpAddress: '0.0.0.0'
+            startIpAddress: '0.0.0.0'
+          }
+          // LOOK
+          dependsOn: [
+            sqlserver
+          ]
+        }
+        ```
+
+    6. Update property values
+        1. Take a look at the SQL database resource properties:
+            ```bicep
+            resource sqlserverName_databaseName 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+              name: '${sqlserver.name}/${databaseName}'
+              location: location
+              sku: {
+                name: 'Basic'
+              }
+              properties: {
+                collation: 'SQL_Latin1_General_CP1_CI_AS'
+                maxSizeBytes: 1073741824
+              }
+            }
+            ```
+            - Does it make sense to hard-code the SKU's name property value?
+              + And what are those weird-looking values for the collation and maxSizeBytes properties?
+            - TIP: The collation and maxSizeBytes properties are set to the default values. 
+              + If you don't specify the values yourself, the default values will be used. Does that help you to decide what to do with them?
+
+        2. Can you change the way the storage connection string is set so that the complex expression isn't defined inline with the resource?
+            ```bicep
+            resource webSite 'Microsoft.Web/sites@2023-12-01' = {
+              name: webSiteName
+              location: location
+              properties: {
+                serverFarmId: hostingPlan.id
+                siteConfig: {
+                  appSettings: [
+                    {
+                      name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+                      value: AppInsights_webSiteName.properties.InstrumentationKey
+                    }
+                    {
+                      name: 'StorageAccountConnectionString'
+
+                      // HIGHTLIGT
+                      value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value}'
+                    }
+                  ]
+                }
+              }
+              identity: {
+                type: 'UserAssigned'
+                userAssignedIdentities: {
+                  '${msi.id}': {}
+                }
+              }
+            }
+            ```
+    
+    7. Order of elements
+        1. Are you happy with the order of the elements in the file? 
+            - How could you improve the file's readability by moving the elements around?
+        2. Take a look at the **databaseName** variable. Does it belong where it is now?
+            ```Bicep
+            //NOTICE
+            var databaseName = 'ToyCompanyWebsite'
+            resource sqlserverName_databaseName 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+              name: '${sqlserver.name}/${databaseName}'
+              location: location
+              sku: {
+                name: 'Basic'
+              }
+              properties: {
+                collation: 'SQL_Latin1_General_CP1_CI_AS'
+                maxSizeBytes: 1073741824
+              }
+            }
+            ```
+
+        3. Did you notice the commented-out resource, **webSiteConnectionStrings**? Do you think that needs to be in the file?
+
+
+    8. Add comments, tags, and other metadata
+        1. Take a look at the **webSite** resource's **identity** property:
+            ```Bicep
+            resource webSite 'Microsoft.Web/sites@2023-12-01' = {
+              name: webSiteName
+              location: location
+              properties: {
+                serverFarmId: hostingPlan.id
+                siteConfig: {
+                  appSettings: [
+                    {
+                      name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+                      value: AppInsights_webSiteName.properties.InstrumentationKey
+                    }
+                    {
+                      name: 'StorageAccountConnectionString'
+                      value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value}'
+                    }
+                  ]
+                }
+              }
+              identity: {
+                type: 'UserAssigned'
+                userAssignedIdentities: {
+                  '${msi.id}': {}
+                }
+              }
+            }
+            ```
+            - That syntax is strange, isn't it? Do you think this needs a comment to help explain it?
+
+        2. Look at the role assignment resource:
+            ```Bicep
+            resource roleassignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+              name: guid(roleDefinitionId, resourceGroup().id)
+
+              properties: {
+                principalType: 'ServicePrincipal'
+                roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionId)
+                principalId: msi.properties.principalId
+              }
+            }
+            ```
+            - The resource name uses the **guid()** function. Would it help to explain why?
+
+        3. Can you add a description to the role assignment?
+        4. Can you add a set of tags to each resource?
+
+    9. Suggested solution
+        - Here's an example of how you might refactor the template. Your template might not look exactly like this, because your style might be different.
+
+        ```Bicep
+        @description('The location into which your Azure resources should be deployed.')
+        param location string = resourceGroup().location
+
+        @description('Select the type of environment you want to provision. Allowed values are Production and Test.')
+        @allowed([
+          'Production'
+          'Test'
+        ])
+        param environmentType string
+
+        @description('A unique suffix to add to resource names that need to be globally unique.')
+        @maxLength(13)
+        param resourceNameSuffix string = uniqueString(resourceGroup().id)
+
+        @description('The administrator login username for the SQL server.')
+        param sqlServerAdministratorLogin string
+
+        @secure()
+        @description('The administrator login password for the SQL server.')
+        param sqlServerAdministratorLoginPassword string
+
+        @description('The tags to apply to each resource.')
+        param tags object = {
+          CostCenter: 'Marketing'
+          DataClassification: 'Public'
+          Owner: 'WebsiteTeam'
+          Environment: 'Production'
+        }
+
+        // Define the names for resources.
+        var appServiceAppName = 'webSite${resourceNameSuffix}'
+        var appServicePlanName = 'AppServicePLan'
+        var sqlServerName = 'sqlserver${resourceNameSuffix}'
+        var sqlDatabaseName = 'ToyCompanyWebsite'
+        var managedIdentityName = 'WebSite'
+        var applicationInsightsName = 'AppInsights'
+        var storageAccountName = 'toywebsite${resourceNameSuffix}'
+        var blobContainerNames = [
+          'productspecs'
+          'productmanuals'
+        ]
+
+        @description('Define the SKUs for each component based on the environment type.')
+        var environmentConfigurationMap = {
+          Production: {
+            appServicePlan: {
+              sku: {
+                name: 'S1'
+                capacity: 2
+              }
+            }
+            storageAccount: {
+              sku: {
+                name: 'Standard_GRS'
+              }
+            }
+            sqlDatabase: {
+              sku: {
+                name: 'S1'
+                tier: 'Standard'
+              }
+            }
+          }
+          Test: {
+            appServicePlan: {
+              sku: {
+                name: 'F1'
+                capacity: 1
+              }
+            }
+            storageAccount: {
+              sku: {
+                name: 'Standard_LRS'
+              }
+            }
+            sqlDatabase: {
+              sku: {
+                name: 'Basic'
+              }
+            }
+          }
+        }
+
+        @description('The role definition ID of the built-in Azure \'Contributor\' role.')
+        var contributorRoleDefinitionId = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+        var storageAccountConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value}'
+
+        resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
+          name: sqlServerName
+          location: location
+          tags: tags
+          properties: {
+            administratorLogin: sqlServerAdministratorLogin
+            administratorLoginPassword: sqlServerAdministratorLoginPassword
+            version: '12.0'
+          }
+        }
+
+        resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+          parent: sqlServer
+          name: sqlDatabaseName
+          location: location
+          sku: environmentConfigurationMap[environmentType].sqlDatabase.sku
+          tags: tags
+        }
+
+        resource sqlFirewallRuleAllowAllAzureIPs 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+          parent: sqlServer
+          name: 'AllowAllAzureIPs'
+          properties: {
+            endIpAddress: '0.0.0.0'
+            startIpAddress: '0.0.0.0'
+          }
+        }
+
+        resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+          name: appServicePlanName
+          location: location
+          sku: environmentConfigurationMap[environmentType].appServicePlan.sku
+          tags: tags
+        }
+
+        resource appServiceApp 'Microsoft.Web/sites@2023-12-01' = {
+          name: appServiceAppName
+          location: location
+          tags: tags
+          properties: {
+            serverFarmId: appServicePlan.id
+            siteConfig: {
+              appSettings: [
+                {
+                  name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+                  value: applicationInsights.properties.InstrumentationKey
+                }
+                {
+                  name: 'StorageAccountConnectionString'
+                  value: storageAccountConnectionString
+                }
+              ]
+            }
+          }
+          identity: {
+            type: 'UserAssigned'
+            userAssignedIdentities: {
+              '${managedIdentity.id}': {} // This format is required when working with user-assigned managed identities.
+            }
+          }
+        }
+
+        resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+          name: storageAccountName
+          location: location
+          sku: environmentConfigurationMap[environmentType].storageAccount.sku
+          kind: 'StorageV2'
+          properties: {
+            accessTier: 'Hot'
+          }
+
+          resource blobServices 'blobServices' existing = {
+            name: 'default'
+
+            resource containers 'containers' = [for blobContainerName in blobContainerNames: {
+              name: blobContainerName
+            }]
+          }
+        }
+
+        @description('A user-assigned managed identity that is used by the App Service app to communicate with a storage account.')
+        resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-07-31-preview'= {
+          name: managedIdentityName
+          location: location
+          tags: tags
+        }
+
+        @description('Grant the \'Contributor\' role to the user-assigned managed identity, at the scope of the resource group.')
+        resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+          name: guid(contributorRoleDefinitionId, resourceGroup().id) // Create a GUID based on the role definition ID and scope (resource group ID). This will return the same GUID every time the template is deployed to the same resource group.
+          properties: {
+            principalType: 'ServicePrincipal'
+            roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', contributorRoleDefinitionId)
+            principalId: managedIdentity.properties.principalId
+            description: 'Grant the "Contributor" role to the user-assigned managed identity so it can access the storage account.'
+          }
+        }
+
+        resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
+          name: applicationInsightsName
+          location: location
+          kind: 'web'
+          tags: tags
+          properties: {
+            Application_Type: 'web'
+          }
+        }
+        ```
+
+7. Summary
+    - As you continue to use Bicep, you'll benefit from understanding the **Bicep patterns**. 
+      + The patterns provide proven solutions to some of the common scenarios Bicep users face.
+      + Bicep patterns: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/patterns-configuration-set
+
+    - You should also be familiar with **Bicep scenarios**, which provide guidance on how to build Bicep files for specific types of Azure resources.
+      + Bicep scenarios: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/scenarios-rbac
+
+8. References
+    - Best practices for Bicep: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/best-practices
+    - Cloud Adoption Framework guidance on naming and tagging
+      + https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/naming-and-tagging
+    - Azure resource name rules: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules
+
+## Review Azure infrastructure changes by using Bicep and pull requests
+
+## Preview Azure deployment changes by using what-if
+- https://learn.microsoft.com/en-us/training/modules/arm-template-whatif/
+
+1. Introduction
+    - Deployments that use Azure Resource Manager templates (ARM templates) and Bicep files result in a series of changes to your Azure environment. 
+      + In this module, you learn how to preview changes before you execute a deployment.
+
+2. Example scenario
+    - Suppose you help to manage the Azure environment at a toy company.
+      + One of your colleagues has asked you to help update some templates that you previously created to deploy a virtual network.
+      + Before you deploy your updated template, you want to confirm exactly what changes Azure will make. 
+      + So you decide to evaluate how to preview changes in your deployments.
+
+2. Understand deployment modes
+    - Azure Resource Manager supports two deployment modes: incremental and complete.
+    1. Incremental mode
+        - The default deployment mode is incremental. 
+          + In this mode, Resource Manager doesn't delete anything. 
+          + If resources exist in the resource group but aren't specified in the template, Resource Manager leaves them alone.
+          + Resources in the template are added to the resource group if they don't already exist, and if they do exist, Resource Manager updates them to the configuration in the template.
+
+    2. Complete mode
+        - You have to explicitly ask for your deployment to run in complete mode. 
+          + When you use this mode, resources that exist in Azure but that aren't specified in the template are deleted. 
+          + Complete mode doesn't delete all resources in your resource group
+
+        - CAUTION: When you run the command in complete mode, whatever resources you have will be removed if they're not defined in the template file.
+
+        - In Bicep, you can refer to an existing resource by using the existing keyword.
+          + Referring to a resource in this way doesn't stop it from being deleted during a deployment in complete mode.
+
+        1. When should I use complete mode?
+            - It might seem like a strange idea to allow Azure to delete your resources like this. 
+              + However, there's a good reason why you might want to consider it.
+              + If all of your infrastructure is defined in templates, then using complete mode every time you deploy ensures that no errant resources are left afterward.
+              + In other words, it helps to avoid configuration drift in your environment.
+
+            - If you know with certainty that what's in the template file constitutes the full state of your deployment, then go ahead and use this mode.
+              + If you use tools like the Azure CLI or PowerShell to update your state gradually, then incremental mode is the way to go.
+
+    3. Deployment scopes
+        - Complete mode is available when you deploy to a resource group. 
+          + If you use templates to deploy resources to a subscription, management group, or a tenant, you aren't able to use complete mode.
+
+3. Predict what a deployment will do by using what-if
+    - Anyone who's deploying or modifying resources in an environment has questions like these on their mind:
+      + Will I break something?
+      + Am I going to delete anything?
+      + How will this deployment affect existing resources?
+      + Can I validate that what I expect to happen is actually what will happen in the deployment, before I hit the deploy button?
+
+    1. Control the format of what-if results
+        ```Azure CLI
+        az deployment group what-if --resource-group ToyStorage --template-file $templateFile --result-format FullResourcePayloads
+        ```
+        - **FullResourcePayloads**: get a verbose output that consists of a list of resources that will change.
+        - **ResourceIdOnly**: returns a list of resources that will change, but not all the details
+
+    2. Types of changes that what-if detects
+        - When you use the what-if operation, it lists six types of changes:
+          + Create:	The resource doesn't currently exist but is defined in the template.
+          + Delete:	This change type applies only when you're using complete mode for deployment. The resource exists but isn't defined in the template.
+            - If you deploy by using incremental mode, the resource isn't deleted.
+            - If you deploy by using complete mode, the resource is deleted
+          + Ignore:	The resource exists but isn't defined in the template.
+            - When you use incremental mode, which is the default deployment mode, the resource isn't deployed or modified.
+            - If you deploy by using complete mode, the resource will be deleted.
+          + NoChange:	The resource exists and is defined in the template.
+            - The resource will be redeployed, but the properties of the resource won't change.
+          + Modify:	The resource exists and is defined in the template.
+            - The resource will be redeployed, and the properties of the resource will change.
+          + Deploy:	The resource exists and is defined in the template.
+            - The resource will be redeployed.
+
+        1. Use what-if results in a script
+            - You might want to use the output from the what-if operation within a script or as part of an automated deployment process.
+            - You can get the raw JSON results by appending the **--no-pretty-print** argument to your CLI command.
+              + Then, your script can parse the results and perform any custom logic you might need.
+
+    3. Deployment modes and deletion of resources
+    4. Confirm your deployments
+        - use the __--confirm-with-what-if__ argument
+
+        - TIP: It's a good idea to run your deployment commands with the **--confirm-with-what-if** argument, especially if you're deploying in complete mode. 
+          + If you use the **--confirm-with-what-if** switch, you have a chance to stop the operation if you don't like the proposed changes.
+
+4. Exercise - Preview changes with the what-if command
+    1. Create the starting template
+        - **main.bicep** file:
+          ```bicep
+          param location string  = resourceGroup().location
+
+          resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+            name: 'vnet-001'
+            location: location
+            tags: {
+              CostCenter: '12345'
+              Owner: 'Team A'
+            }
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  '10.0.0.0/16'
+                ]
+              }
+              enableVmProtection: false
+              enableDdosProtection: false
+              subnets: [
+                {
+                  name: 'subnet001'
+                  properties: {
+                    addressPrefix: '10.0.0.0/24'
+                  }
+                }
+                {
+                  name: 'subnet002'
+                  properties: {
+                    addressPrefix: '10.0.1.0/24'
+                  }
+                }
+              ]
+            }
+          }
+          ```
+
+    2. Deploy the template to Azure
+        ```Azure CLI
+        az deployment group create --name main --template-file main.bicep
+        ```
+    
+    3. Verify the deployment
+        - *vnet-001*: virtual network
+
+    4. Modify the template
+        - delete the tag named **Owner** and its value
+          ```bicep
+          tags: {
+            CostCenter: '12345'
+          }
+          ```
+        - Update the **addressPrefixes** to change the **/16** to **/15**
+          ```
+          addressSpace: {
+            addressPrefixes: [
+              '10.0.0.0/15'
+            ]
+          }
+          ```
+
+        - Delete the subnet named **subnet001**
+          ```bicep
+          subnets: [
+            {
+              name: 'subnet002'
+              properties: {
+                addressPrefix: '10.0.1.0/24'
+              }
+            }
+          ]
+          ```
+
+    5. Run the **what-if** command with the modified template
+        ```Azure CLI
+        az deployment group what-if --template-file main.bicep
+        ```
+
+    6. Remove the resources in the template
+        - delete all of the contents of the *main.bicep*
+
+    7. Deploy by using **complete mode** and the confirmation option
+        - WARNING: Doing this in real life will remove anything you have in the cloud. The following code is interesting as an intellectual experiment, but be careful about using this mode.
+          + At minimum, use the **--confirm-with-what-if** flag so you can stop this operation if you don't like the proposed changes.
+
+        - Step 1. Run **az deployment group create** with the flag **--mode Complete** to create a deployment in complete mode:
+        ```Azure CLI
+        az deployment group create --name main --mode Complete --confirm-with-what-if --template-file main.bicep
+        ```
+        
+        - Step 2. Enter **y** (for "yes") to execute the deployment and clean out your environment.
+
+    8. Verify the deployment
+
+5. Summary
+
+## Migrate Azure resources and JSON ARM templates to use Bicep
+
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
 
