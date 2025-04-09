@@ -3983,7 +3983,6 @@
 
     2. Stage your changes
         ```
-        git add .
         git add deploy/main.bicep
         ```
     3. Commit the staged changes
@@ -4017,7 +4016,7 @@
         ```
 
     2. Add a Bicep module
-        1. add *deploy/modules/app-service.bicep* file
+        1. add **deploy/modules/app-service.bicep** file
             ```bicep
             @description('The Azure region into which the resources should be deployed.')
             param location string
@@ -4055,7 +4054,7 @@
             }
             ```
 
-        2. Edit *deploy/main.bicep* file:
+        2. Edit **deploy/main.bicep** file:
             ```bicep
             @description('The name of the App Service app. This name must be globally unique.')
             param appServiceAppName string = 'toyweb-${uniqueString(resourceGroup().id)}'
@@ -4085,7 +4084,7 @@
         ```
 
     6. View a file's history by using Visual Studio Code
-        - Right-click *main.bicep* file, select **Open Timeline**
+        - Right-click **main.bicep** file, select **Open Timeline**
 
 5. Branch and merge your changes
     - When you work on Bicep code, it's common to need to do more than one thing at a time.
@@ -4122,7 +4121,7 @@
         ```
 
     2. Update a file on your branch
-        - update *deploy/modules/cosmos-db.bicep* file
+        - update **deploy/modules/cosmos-db.bicep** file
           ```bicep
           @description('The Azure region into which the resources should be deployed.')
           param location string
@@ -4185,22 +4184,26 @@
           }
           ```
 
-      - update *deploy/main.bicep* file:
-          ```
-          @description('The name of the Cosmos DB account. This name must be globally unique.')
-          param cosmosDBAccountName string = 'toyweb-${uniqueString(resourceGroup().id)}'
+        - update **deploy/main.bicep** file:
+            ```Bicep
+            @description('The name of the Cosmos DB account. This name must be globally unique.')
+            param cosmosDBAccountName string = 'toyweb-${uniqueString(resourceGroup().id)}'
 
-          module cosmosDB 'modules/cosmos-db.bicep' = {
-            name: 'cosmos-db'
-            params: {
-              location: location
-              environmentType: environmentType
-              cosmosDBAccountName: cosmosDBAccountName
+            module cosmosDB 'modules/cosmos-db.bicep' = {
+              name: 'cosmos-db'
+              params: {
+                location: location
+                environmentType: environmentType
+                cosmosDBAccountName: cosmosDBAccountName
+              }
             }
-          }
-          ```
+            ```
 
     3. Review the differences and commit the changes
+        ```
+        git add deploy/modules/cosmos-db.bicep deploy/main.bicep
+        git commit -m 'Add CosmosDB module'
+        ```
 
 7. Publish your repository to enable collaboration
     1. What are GitHub and Azure Repos?
@@ -5225,6 +5228,330 @@
     - Azure resource name rules: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules
 
 ## Review Azure infrastructure changes by using Bicep and pull requests
+- https://learn.microsoft.com/en-us/training/modules/review-azure-infrastructure-changes-using-bicep-pull-requests
+
+1. Example scenario
+    - you need to make a change to the way your website processes orders. 
+      + You need to add a message queue so that your website can post messages whenever a customer places an order for a toy.
+      + A back-end system, built by another team, will pick up these messages and process the orders later.
+      + You need to ensure that you don't start sending messages to the queue until the other team is ready.
+
+    - You decide that this is a great opportunity to try out a new process.
+      + You'll use pull requests to control how your Bicep changes are merged.
+      + Code will be written by the author, reviewed by a reviewer, and then merged to a Git repository before it's deployed to Azure.
+
+2. Understand branching
+    - Learn about branching strategies and how to protect the main branch.
+
+    1. Why do you want to protect the main branch?
+        - The main branch is the source of truth for what gets deployed to your Azure environments.
+          + For many solutions, you'll have multiple environments, such as *development*, *quality assurance (QA)*, and *production*.
+          + In other scenarios, you might have only a *production* environment.
+          + Regardless of how many environments you use, the main branch is the branch to which your team members contribute.
+          + Their changes ultimately land on the main branch.
+
+        - Basic process:
+          ![Basic process](./assets/Review%20Azure%20Infrastructure/2-basic-process.png)
+
+    2. Feature branches
+        - A feature branch indicates a new piece of work you're starting.
+          + The work might be a configuration change to a resource defined in your Bicep file, or a new set of resources that you need to deploy. 
+          + Every time you start a new piece of work, you create a new feature branch.
+
+        1. Update your feature branches
+            - While your feature branch is underway, other features might be merged into your repository's main branch.
+              + The result is that your feature branch and your project's main branch will drift apart. 
+              + The further they drift apart, the more difficult it becomes to merge the two branches again at a later point, and the more merge conflicts you might encounter.
+
+            - You should update your feature branch regularly so that you incorporate any changes that have been made to the repository's main branch. 
+              + It's also a good idea to update your feature branch before you start to merge the feature branch back into the main branch.
+              + This way, you make sure that your new changes can be merged into the main branch easily.
+
+            - TIP: Merge the main branch into your feature branch often.
+
+        2. Use small, short-lived branches
+            - Aim for short-lived feature branches.
+              + This approach helps you avoid merge conflicts by reducing the amount of time that your branches might get out of sync.
+              + This approach also makes it easier for your colleagues to understand the changes you've made, which is helpful when you need someone to review your changes.
+
+            - The following example code shows how you would use the if keyword to create a Bicep file that defines a storage account but disables the storage account's deployment until you're done with all of the changes.
+              ```Bicep
+              @description('Specifies whether the storage account is ready to be deployed.')
+              param storageAccountReady bool = false
+
+              resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (storageAccountReady) {
+                name: storageAccountName
+                location: location
+                kind: 'StorageV2'
+                sku: {
+                  name: 'Premium_LRS'
+                }
+              }
+              ```
+
+        3. Merging feature branches
+
+        4. Branch policies
+            - Branch policies enforce rules like:
+              + No change can be merged into the main branch except through a pull request.
+              + Changes need to be reviewed by at least two other people.
+
+    3. Other branching strategies
+        - When you collaborate on your Bicep code, you can use various branching strategies.
+          + Each branching strategy has benefits and drawbacks.
+
+        - 1. *trunk-based development* strategy
+          + work is done on short-lived feature branches and is then merged into a single main branch.
+          + You might automatically deploy the contents of the shared repository's main branch to production every time a change is merged,
+            - or you might batch changes and release them on a schedule, like every week.
+          + Trunk-based development is easy to understand, and it enables collaboration without much overhead.
+
+        - 2. *long-lived development* strategy
+          + Some teams separate the work that they've completed from the work that they've deployed to production.
+          + They use a long-lived development branch as the target for merging their feature branches.
+          + They merge the *development* branch into their *main* branch when they release changes to production.
+
+        - 3. Some other branching strategies require you to create **release branches**.
+          + When you have a set of changes ready to deploy to production, you create a release branch with the changes to deploy.
+          + These strategies can make sense when you deploy your Azure infrastructure on a regular cadence,
+            - or when you're integrating your changes with many other teams.
+
+        - 4. Other branching strategies include Gitflow, GitHub Flow, and GitLab Flow.
+          + Some teams use GitHub Flow or GitLab Flow because it enables separating work from different teams, along with separating urgent bug fixes from other changes.
+          + These processes can also enable you to separate your commits into different releases of your solution, which is called **cherry picking**. 
+          + However, they require more management to ensure that your changes are compatible with each other.
+
+        - The branching strategy that's right for your team depends on the way your team works, collaborates, and releases its changes.
+          + It's a good idea to start from a simple process, like trunk-based development.
+          + If you find that your team can't work effectively by using this process, gradually introduce other layers of branching, or adopt a branching strategy;
+            - but be aware that as you add more branches, managing your repository becomes more complex.
+
+        - TIP:
+          + Regardless of the branching strategy that you use, it's good to use branch policies to protect the main branch and to use pull requests to review your changes.
+            - Other branching strategies also introduce important branches that you should protect.
+
+3. Exercise - Protect your main branch
+    - Your team is working on a Bicep template that already contains a website and a database.
+      + You've deployed the components to your production environment.
+      + Now, you need to update your Bicep template to add your order processing queue.
+
+    - you'll create a feature branch for your change.
+      + You'll also protect your main branch and only allow changes to be merged to the main branch after they've been reviewed.
+
+    1. Get the Azure DevOps project
+    2. Clone the repository
+        - Select **Repos** --> **Files** --> **Clone**
+
+    3. Add branch policies
+        - go to **Repos** --> **Branches** --> select the **three dots** on **main** branch --> **Branch policies**
+          + change the **Require a minimum number of reviewers** setting to **On**.
+          + **Allow requestors to approve their own changes** option.
+
+    4. Create a local feature branch
+        1. creates a new feature branch for you to work from:
+            ```
+            git checkout -b add-orders-queue
+            ```
+
+        2. Update **deploy/main.bicep**
+            ```bicep
+            var storageAccountSkuName = (environmentType == 'prod') ? 'Standard_GRS' : 'Standard_LRS'
+            var processOrderQueueName = 'processorder'
+            ```
+
+        3. Within the storage account resource, add the queue as a nested child resource:
+            ```Bicep
+            resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+              name: storageAccountName
+              location: location
+              sku: {
+                name: storageAccountSkuName
+              }
+              kind: 'StorageV2'
+              properties: {
+                accessTier: 'Hot'
+              }
+
+              // NEW
+              resource queueServices 'queueServices' existing = {
+                name: 'default'
+
+                resource processOrderQueue 'queues' = {
+                  name: processOrderQueueName
+                }
+              }
+            }
+            ```
+
+        4. In the appService module definition, add the storage account and queue names as parameters:
+            ```bicep
+            module appService 'modules/appService.bicep' = {
+              name: 'appService'
+              params: {
+                location: location
+                appServiceAppName: appServiceAppName
+                storageAccountName: storageAccount.name
+                processOrderQueueName: storageAccount::queueServices::processOrderQueue.name
+                environmentType: environmentType
+              }
+            }
+            ```
+
+        5. update **deploy/modules/appService.bicep**:
+            - add new parameters for the storage account and queue names
+              ```bicep
+              @description('The Azure region into which the resources should be deployed.')
+              param location string
+
+              @description('The name of the App Service app to deploy. This name must be globally unique.')
+              param appServiceAppName string
+
+              // NEW
+              @description('The name of the storage account to deploy. This name must be globally unique.')
+              param storageAccountName string
+
+              // NEW
+              @description('The name of the queue to deploy for processing orders.')
+              param processOrderQueueName string
+
+              @description('The type of the environment. This must be nonprod or prod.')
+              @allowed([
+                'nonprod'
+                'prod'
+              ])
+              param environmentType string
+
+              resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+                name: appServiceAppName
+                location: location
+                properties: {
+                  serverFarmId: appServicePlan.id
+                  httpsOnly: true
+                  siteConfig: {
+                    // NEW
+                    appSettings: [
+                      {
+                        name: 'StorageAccountName'
+                        value: storageAccountName
+                      }
+                      {
+                        name: 'ProcessOrderQueueName'
+                        value: processOrderQueueName
+                      }
+                    ]
+                  }
+                }
+              }
+              ```
+
+    5. Commit and push your feature branch
+        ```bicep
+        git add .
+        git commit -m "Add orders queue and associated configuration"
+        git push --set-upstream origin add-orders-queue
+        ```
+        - The feature branch is pushed to a new branch, also named **add-orders-queue**, in your remote repository.
+
+    6. Try to merge the feature branch to main
+        1. switch to the main branch and merge the add-orders-queue branch to it:
+            ```
+            git checkout main
+            git merge add-orders-queue
+            ```
+
+        2. Try to push and reset:
+            ```
+            git push
+              --> error coz branch policy
+            git reset --hard HEAD~1
+            ```
+            - This command tells your local Git repository to reset the state of the main branch to what it was before the last commit was merged in, and not to save your changes.
+
+4. Review and merge Bicep changes
+    1. Pull requests
+        - A *pull request* is a *request* from you, the developer of a feature, to the maintainer of the main branch. 
+          + You ask the maintainer to *pull* your changes into the main branch of the repository.
+
+        1. Pull requests and branch policies
+            - When you configure branch policies, you can require specific people or a group of people to review the pull request.
+            - You can also require that each pull request is linked to a work item.
+
+        2. Create a pull request
+            - You can create a pull request by using the Azure DevOps web interface.
+            - When you create a pull request, you need to give it a name. 
+              + It's a good practice to make your pull request names clear and understandable.
+              + This practice helps your team members understand the context of what they're being asked to review.
+
+            - Sometimes, you create a pull request just to get feedback from your colleagues. 
+              + In these situations, you can specify that the pull request is a **draft**.
+
+        3. Review a pull request
+            - When you review Bicep code, look for these key elements:
+              + 1. Is the file deployable? 
+                - Deploy and test the Bicep code before it's merged. Use automatically deploy and verify your changes.
+              + 2. Is the Bicep code clear and understandable? 
+                - It's important that everybody on your team understands your Bicep code.
+                - When you review a Bicep file in a pull request, ensure that you understand exactly what every change is for.
+                - Are variables and parameters named well? 
+                - Have comments been used to explain any complex sections of code?
+
+              + 3. Is the change complete?
+                - If this pull request represents part of a wider piece of work, ensure that your environment will work when this change is merged and deployed.
+                - For example, if the pull request reconfigures an Azure resource in preparation for a later change, verify that the resource continues to work correctly throughout the whole process.
+                  + If the pull request adds a new Azure resource that isn't needed yet, consider whether a condition should be added temporarily so that the resource isn't deployed until it's needed.
+
+              + 4. Does the change follow good Bicep practices? 
+              + 5. Does the change match the description? 
+                - It's a good practice for pull requests to include a descriptive title.
+                - Many teams also require that pull requests include a description of the change and its purpose.
+
+        4. Complete a pull request
+            - Your team should decide who merges pull requests and when.
+
+        5. Your team's process
+          ![Revised process](./assets/Review%20Azure%20Infrastructure/4-revised-process.png)
+
+5. Exercise - Create, review, and merge a pull request
+    1. Create a pull request to merge the feature branch
+        - title: "Add orders queue and associated configuration"
+        - description: "This PR adds a new Azure Storage queue for processing orders, and updates the website configuration to include the storage account and queue information."
+
+    2. Review the pull request
+        1. Files tab
+            - **var processOrderQueueName = 'processorder'**: Should this be capitalized?
+
+    3. Respond to the pull request review
+        - *No, storage queues must have lowercase names*
+        - Select **Reply & resolve**
+
+    4. Complete the pull request
+        - Deleting branches helps you avoid confusing team members in the future about which work is still in progress.
+
+    5. Verify the changes
+
+6. Summary
+    - Your team wanted a way to protect the Bicep code on your main branch and prevent accidental changes that might affect your production Azure resources.
+      + You wanted to review any Bicep code before it's merged into your main branch.
+
+7. References
+    - Branching
+      + Merge strategies and squash merge: https://learn.microsoft.com/en-us/azure/devops/repos/git/merging-with-squash
+      + Trunk-based development: https://trunkbaseddevelopment.com/
+      + Gitflow: https://nvie.com/posts/a-successful-git-branching-model/
+      + GitHub flow: https://docs.github.com/get-started/quickstart/github-flow
+      + Patterns for Managing Source Code Branches: https://martinfowler.com/articles/branching-patterns.html
+
+    - Pull requests on Microsoft Learn
+      + Manage repository changes by using pull requests on GitHub
+        - https://learn.microsoft.com/en-us/training/modules/manage-changes-pull-requests-github/
+      + Collaborate with pull requests in Azure Repos: https://learn.microsoft.com/en-us/training/modules/collaborate-pull-requests-azure-repos/
+
+    - Bicep best practices
+      + Structure your Bicep code for collaboration
+        - https://learn.microsoft.com/en-us/training/modules/structure-bicep-code-collaboration/
+      + Best practices for Bicep
+        - https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/best-practices
+
 
 ## Preview Azure deployment changes by using what-if
 - https://learn.microsoft.com/en-us/training/modules/arm-template-whatif/
@@ -5411,6 +5738,742 @@
 5. Summary
 
 ## Migrate Azure resources and JSON ARM templates to use Bicep
+
+1. Example scenario
+    - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company. 
+      + Recently, your company acquired a smaller competitor that has created a popular toy truck. 
+      + This company also uses Azure to host its application infrastructure, but the company deploys its resources by using the Azure portal. 
+      + It deployed a virtual machine that provides some of the services that support the toy truck.
+
+    - You want to begin the process of standardizing on the use of Bicep for all resource deployments. 
+      + To accomplish this task, you'll convert and migrate your resources to Bicep.
+      + You'll refactor the templates for clarity and test deployments to verify the migration.
+
+    - Workflow for migrating your Azure resources to Bicep: convert -> migrate -> refactor -> test -> deploy.
+
+2. Convert and migrate your resources to a Bicep file
+    1. Convert phase
+        - The goal of the **convert** phase of migrating your resources to Bicep is to capture an initial representation of your Azure resources. 
+          + The Bicep file you create in this phase isn't complete, and it's not ready to be used.
+          + However, the file gives you a starting point for your migration.
+
+        - The convert phase consists of two possible steps, which you complete in sequence:
+          + 1. Capture a representation of your Azure resources.
+          + 2. If necessary, convert the JSON representation to Bicep by using the **decompile** command.
+              - Azure -->exports-> Existing JSON file -->Decompile-> Reference Bicep file
+              - Azure -->Import-> Reference Bicep file
+
+              - use the **Insert Resource** command in Visual Studio Code to insert a Bicep representation of your Azure resource
+
+        1. How Azure represents resources
+            - Azure Resource Manager is the service that's used to deploy and manage resources in Azure.
+              + All resources deployed to Azure are tracked by Resource Manager, regardless of the method that was used to deploy the resource.
+              + You can use the Azure portal, Azure CLI, Azure PowerShell, the Resource Manager REST API, and Azure SDKs to interact with Resource Manager.
+                ![Azure resource manager](./assets/Migrate%20Azure%20Resources%20Bicep/azure-resource-manager.png)
+
+            - There are two types of operations in Azure: control plane operations and data plane operations.
+              + **Control plane** operations are used to manage the resources in your subscription.
+              + **Data plane** operations are used to access features that are exposed by a resource.
+            
+              - For example, you use a control plane operation to create a virtual machine, 
+                + but you use a data plane operation to connect to the virtual machine by using Remote Desktop Protocol (RDP).
+
+        2. Export existing resources to a JSON template
+            - The JSON file that you export Azure resource can be decompiled into Bicep.
+            - Use the Azure portal, Azure CLI, and Azure PowerShell cmdlets to export single resources, multiple resources, and entire resource groups.
+
+            - The export process is a control plane operation, which means that it exports only the configuration of the Azure resources.
+            - For example, when you export a virtual machine, the data on the virtual machine's hard drive isn't exported.
+              + And when you export a storage account, the blobs and other contents of the storage account aren't included in the export process.
+
+            - You need to consider a few things when you export existing resources:
+              + The exported resource definition is a snapshot of that resource's current state
+              + The exported template might include some default resource properties that are normally omitted from a Bicep definition.
+              + The exported template probably won't include all the parameters you'll need to make the template reusable.
+              + Some resources can't be exported by using this approach, and you need to define them manually in your Bicep file
+
+        3. Save deployments to a JSON template
+            - If you've ever deployed a resource manually from the Azure portal, you might have noticed the option to **Download a template for automation** on the **Review + create** tab.
+              + This option saves a JSON ARM template that's based on the names and properties you set while creating the resource in the portal.
+
+            - Resource Manager also tracks resource deployments.
+              + Deployment operations include changes submitted by the Azure portal resource creation experience and any ARM template deployments. 
+              + Changes to existing resources made by using the Azure portal, Azure PowerShell cmdlets, Azure CLI, or other tools usually don't create deployments.
+
+            - If the deployments were created by using a compatible tool, you can access the deployment template from the resource group's deployment history.
+              + You can use the Azure portal, Azure CLI, or Azure PowerShell to save deployments.
+
+            - You need to consider a few things when you save your templates by using this method:
+              + The saved template shows the state of the resources at the time of deployment.
+              + If the deployment contained multiple resources, you can't select specific resources to include and exclude.
+              + The template includes only resource properties that are needed for deployment.
+              + The template might include parameters that you can use to redeploy the template in multiple environments.
+              + The template probably doesn't include extraneous properties, but you should still check that the template includes everything that you expect and remove any unneeded properties.
+
+        4. Insert existing resources to Bicep
+            - The Bicep extension for Visual Studio Code includes the **Insert Resource** command, which captures a Bicep representation of an Azure resource. 
+              + This command reads the JSON definition of the resource from Azure, removes properties that are recognized as read-only, and decompiles the JSON to Bicep.
+              + As with the export function, the resulting Bicep code can be used as a starting point for your final Bicep file.
+
+
+        5. Decompile the source JSON ARM template
+            - The second step in migrating your Azure resources to Bicep is to convert your JSON ARM templates and Azure resources to Bicep templates. 
+              + The Bicep tooling includes the **decompile** command to convert templates.
+              + You can invoke the **decompile** command from either Azure CLI or the Bicep CLI.
+
+            - The decompilation process doesn't guarantee a full mapping from JSON to Bicep.
+              + You might need to revise the generated Bicep file to meet your template best practices before you use the file to deploy resources.
+              + Consider it the starting point for your migration.
+
+    - Now have a valid Bicep file to start from.
+
+    2. Migrate phase
+        - The goal of the migrate phase of migrating your resources to Bicep is to create the first draft of your deployable Bicep file and to ensure that it defines all the Azure resources that are in scope for the migration.
+
+        - The migrate phase consists of three steps, which you complete in sequence:
+          + 1. Create a new empty Bicep file.
+          + 2. Copy each resource from your decompiled template.
+          + 3. Identify and re-create any missing resources.
+
+        1. Create a new Bicep file
+            - It's a good practice to create a new Bicep file.
+              + The file you created in the convert phase is a reference point for you to look at, but you shouldn't treat it as final or deploy it as-is.
+
+        2. Copy resources to the new Bicep file
+            - Copy each resource individually from the converted Bicep file to the new Bicep file.
+              + This process helps you resolve any issues on a per-resource basis and avoid any confusion as your template gets larger.
+
+        3. Re-create unsupported resources
+            - Not all Azure resource types can be exported via the Azure portal, Azure CLI, or Azure PowerShell.
+            - You can choose from several tools and approaches to re-create resources, including *Azure Resource Explorer*, the *ARM template reference*, and *Azure Quickstart Templates*.
+
+            1. Azure Resource Explorer
+                - Azure Resource Explorer is a tool that's embedded in the Azure portal.
+
+            2. ARM template reference
+            3. Azure Quickstart Templates
+
+3. Exercise - Convert and migrate resources
+    1. Create a virtual machine by using the Azure portal
+    2. Export the resource group contents to a JSON template
+        - From Portal, under **Automation**, select **Export template**: A JSON template is generated. 
+    3. Prepare your local environment
+
+    4. Decompile the JSON template to Bicep: 
+      ```
+      az bicep decompile --file template.json
+      ```
+
+    5. Inspect the decompiled Bicep file
+    6. Create a new Bicep file: **main.bicep** file
+    7. Copy each element into your new Bicep file: **template.bicep** file to *main.bicep* file
+    8. Check for missing resources
+    9. Verify your template
+        - At the end of the migrate phase, your main.bicep file should look similar to this example:
+          ```bicep
+          param virtualNetworks_ToyTruck_vnet_name string = 'ToyTruck-vnet'
+          param virtualMachines_ToyTruckServer_name string = 'ToyTruckServer'
+          param networkInterfaces_toytruckserver154_name string = 'toytruckserver154'
+          param publicIPAddresses_ToyTruckServer_ip_name string = 'ToyTruckServer-ip'
+          param networkSecurityGroups_ToyTruckServer_nsg_name string = 'ToyTruckServer-nsg'
+
+          resource networkSecurityGroups_ToyTruckServer_nsg_name_resource 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
+            name: networkSecurityGroups_ToyTruckServer_nsg_name
+            location: 'westus3'
+            properties: {
+              securityRules: []
+            }
+          }
+
+          resource publicIPAddresses_ToyTruckServer_ip_name_resource 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
+            name: publicIPAddresses_ToyTruckServer_ip_name
+            location: 'westus3'
+            sku: {
+              name: 'Standard'
+              tier: 'Regional'
+            }
+            properties: {
+              ipAddress: '1.2.3.4'
+              publicIPAddressVersion: 'IPv4'
+              publicIPAllocationMethod: 'Static'
+              idleTimeoutInMinutes: 4
+              ipTags: []
+            }
+          }
+
+          resource virtualMachines_ToyTruckServer_name_resource 'Microsoft.Compute/virtualMachines@2024-07-01' = {
+            name: virtualMachines_ToyTruckServer_name
+            location: 'westus3'
+            properties: {
+              hardwareProfile: {
+                vmSize: 'Standard_D2s_v3'
+              }
+              storageProfile: {
+                imageReference: {
+                  publisher: 'canonical'
+                  offer: '0001-com-ubuntu-server-focal'
+                  sku: '20_04-lts-gen2'
+                  version: 'latest'
+                }
+                osDisk: {
+                  osType: 'Linux'
+                  name: '${virtualMachines_ToyTruckServer_name}_disk1_23e6a144c4ea4049b3e2be24b78a9e81'
+                  createOption: 'FromImage'
+                  caching: 'ReadWrite'
+                  managedDisk: {
+                    storageAccountType: 'Premium_LRS'
+                    id: resourceId('Microsoft.Compute/disks', '${virtualMachines_ToyTruckServer_name}_disk1_23e6a144c4ea4049b3e2be24b78a9e81')
+                  }
+                  deleteOption: 'Delete'
+                  diskSizeGB: 30
+                }
+                dataDisks: []
+              }
+              osProfile: {
+                computerName: virtualMachines_ToyTruckServer_name
+                adminUsername: 'toytruckadmin'
+                linuxConfiguration: {
+                  disablePasswordAuthentication: false
+                  provisionVMAgent: true
+                  patchSettings: {
+                    patchMode: 'ImageDefault'
+                    assessmentMode: 'ImageDefault'
+                  }
+                  enableVMAgentPlatformUpdates: false
+                }
+                secrets: []
+                allowExtensionOperations: true
+                requireGuestProvisionSignal: true
+              }
+              networkProfile: {
+                networkInterfaces: [
+                  {
+                    id: networkInterfaces_toytruckserver154_name_resource.id
+                    properties: {
+                      deleteOption: 'Detach'
+                    }
+                  }
+                ]
+              }
+              diagnosticsProfile: {
+                bootDiagnostics: {
+                  enabled: true
+                }
+              }
+            }
+          }
+
+          resource virtualNetworks_ToyTruck_vnet_name_resource 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+            name: virtualNetworks_ToyTruck_vnet_name
+            location: 'westus3'
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  '10.0.0.0/16'
+                ]
+              }
+              subnets: [
+                {
+                  name: 'default'
+                  id: virtualNetworks_ToyTruck_vnet_name_default.id
+                  properties: {
+                    addressPrefix: '10.0.0.0/24'
+                    delegations: []
+                    privateEndpointNetworkPolicies: 'Disabled'
+                    privateLinkServiceNetworkPolicies: 'Enabled'
+                  }
+                  type: 'Microsoft.Network/virtualNetworks/subnets'
+                }
+              ]
+              virtualNetworkPeerings: []
+              enableDdosProtection: false
+            }
+          }
+
+          resource virtualNetworks_ToyTruck_vnet_name_default 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+            name: '${virtualNetworks_ToyTruck_vnet_name}/default'
+            properties: {
+              addressPrefix: '10.0.0.0/24'
+              delegations: []
+              privateEndpointNetworkPolicies: 'Disabled'
+              privateLinkServiceNetworkPolicies: 'Enabled'
+            }
+            dependsOn: [
+              virtualNetworks_ToyTruck_vnet_name_resource
+            ]
+          }
+
+          resource networkInterfaces_toytruckserver154_name_resource 'Microsoft.Network/networkInterfaces@2024-05-01' = {
+            name: networkInterfaces_toytruckserver154_name
+            location: 'westus3'
+            kind: 'Regular'
+            properties: {
+              ipConfigurations: [
+                {
+                  name: 'ipconfig1'
+                  id: '${networkInterfaces_toytruckserver154_name_resource.id}/ipConfigurations/ipconfig1'
+                  etag: 'W/"6a38849d-bd59-4eae-856e-4909f7ac1fac"'
+                  type: 'Microsoft.Network/networkInterfaces/ipConfigurations'
+                  properties: {
+                    provisioningState: 'Succeeded'
+                    privateIPAddress: '10.0.0.4'
+                    privateIPAllocationMethod: 'Dynamic'
+                    publicIPAddress: {
+                      name: 'ToyTruckServer-ip'
+                      id: publicIPAddresses_ToyTruckServer_ip_name_resource.id
+                      properties: {
+                        provisioningState: 'Succeeded'
+                        resourceGuid: '07079685-0980-4ddf-acc3-3c8797c94b9a'
+                        publicIPAddressVersion: 'IPv4'
+                        publicIPAllocationMethod: 'Dynamic'
+                        idleTimeoutInMinutes: 4
+                        ipTags: []
+                        ipConfiguration: {
+                          id: '${networkInterfaces_toytruckserver154_name_resource.id}/ipConfigurations/ipconfig1'
+                        }
+                        deleteOption: 'Detach'
+                      }
+                      type: 'Microsoft.Network/publicIPAddresses'
+                      sku: {
+                        name: 'Basic'
+                        tier: 'Regional'
+                      }
+                    }
+                    subnet: {
+                      id: virtualNetworks_ToyTruck_vnet_name_default.id
+                    }
+                    primary: true
+                    privateIPAddressVersion: 'IPv4'
+                  }
+                }
+              ]
+              dnsSettings: {
+                dnsServers: []
+              }
+              enableAcceleratedNetworking: true
+              enableIPForwarding: false
+              disableTcpStateTracking: false
+              networkSecurityGroup: {
+                id: networkSecurityGroups_ToyTruckServer_nsg_name_resource.id
+              }
+              nicType: 'Standard'
+            }
+          }
+          ```
+
+4. Refactor the Bicep file
+    - The refactor phase consists of eight steps, which you can do in any order:
+      + Review resource API versions.
+      + Review the linter suggestions in your new Bicep file.
+      + Revise parameters, variables, and symbolic names.
+      + Simplify expressions.
+      + Review child and extension resources.
+      + Modularize.
+      + Add comments.
+      + Follow Bicep best practices.
+
+5. Exercise - Refactor the Bicep file
+    1. Update the resource symbolic names
+        ```
+        Resource type 	    Current symbolic name 	                            New symbolic name
+        Public IP address	  publicIPAddresses_ToyTruckServer_ip_name_resource	  publicIPAddress
+        Virtual machine	    virtualMachines_ToyTruckServer_name_resource	      virtualMachine
+        Virtual network	    virtualNetworks_ToyTruck_vnet_name_resource	        virtualNetwork
+        Subnet	            virtualNetworks_ToyTruck_vnet_name_default	        defaultSubnet
+        Network interface	  networkInterfaces_toytruckserver890_name_resource	  networkInterface
+        ```
+
+    2. Remove the redundant subnet resource
+        - **defaultSubnet** resource
+
+    3. Change the parameters to variables
+        ```Bicep
+        var virtualNetworkName = 'ToyTruck-vnet'
+        ```
+        ```
+        Current parameter name	                      New variable name
+        virtualMachines_ToyTruckServer_name	          virtualMachineName
+        networkInterfaces_toytruckserver890_name	    networkInterfaceName
+        publicIPAddresses_ToyTruckServer_ip_name	    publicIPAddressName
+        networkSecurityGroups_ToyTruckServer_nsg_name	networkSecurityGroupName
+        ```
+
+        - Verify that your variable declarations look like the following example
+          ```
+          var virtualNetworkName = 'ToyTruck-vnet'
+          var virtualMachineName = 'ToyTruckServer'
+          var networkInterfaceName = 'YOUR-NETWORK-INTERFACE-NAME'
+          var publicIPAddressName = 'ToyTruckServer-ip'
+          var networkSecurityGroupName = 'ToyTruckServer-nsg'
+          ```
+
+    4. Update the resource locations
+        ```
+        @description('The location where resources are deployed.')
+        param location string = resourceGroup().location
+        ```
+
+    5. Add parameters and variables
+        ```bicep
+        @description('The name of the size of the virtual machine to deploy.')
+        param virtualMachineSizeName string = 'Standard_D2s_v3'
+
+        @description('The name of the storage account SKU to use for the virtual machine\'s managed disk.')
+        param virtualMachineManagedDiskStorageAccountType string = 'Premium_LRS'
+
+        @description('The administrator username for the virtual machine.')
+        param virtualMachineAdminUsername string = 'toytruckadmin'
+
+        @description('The administrator password for the virtual machine.')
+        @secure()
+        param virtualMachineAdminPassword string
+
+        @description('The name of the SKU of the public IP address to deploy.')
+        param publicIPAddressSkuName string = 'Standard'
+
+        @description('The virtual network address range.')
+        param virtualNetworkAddressPrefix string
+
+        @description('The default subnet address range within the virtual network')
+        param virtualNetworkDefaultSubnetAddressPrefix string
+        ```
+
+    6. Remove unnecessary properties
+    7. Create a parameter file
+        - *main.parameters.production.json* file:
+          ```JSON
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "virtualMachineSizeName": {
+                "value": "Standard_D2s_v3"
+              },
+              "virtualMachineManagedDiskStorageAccountType": {
+                  "value": "Premium_LRS"
+              },
+              "virtualMachineAdminUsername": {
+                  "value": "toytruckadmin"
+              },
+              "virtualNetworkAddressPrefix": {
+                  "value": "YOUR-VIRTUAL-NETWORK-ADDRESS-PREFIX"
+              },
+              "virtualNetworkDefaultSubnetAddressPrefix": {
+                  "value": "YOUR-SUBNET-ADDRESS-PREFIX"
+              }
+            }
+          }
+          ```
+
+    8. Verify your template
+        - At the end of the refactor phase, your main.bicep file should look similar to the following example:
+          ```bicep
+          @description('The location where resources are deployed.')
+          param location string = resourceGroup().location
+
+          @description('The name of the size of the virtual machine to deploy.')
+          param virtualMachineSizeName string
+
+          @description('The name of the storage account SKU to use for the virtual machine\'s managed disk.')
+          param virtualMachineManagedDiskStorageAccountType string
+
+          @description('The administrator username for the virtual machine.')
+          param virtualMachineAdminUsername string
+
+          @description('The administrator password for the virtual machine.')
+          @secure()
+          param virtualMachineAdminPassword string
+
+          @description('The name of the SKU of the public IP address to deploy.')
+          param publicIPAddressSkuName string = 'Standard'
+
+          @description('The virtual network address range.')
+          param virtualNetworkAddressPrefix string
+
+          @description('The default subnet address range within the virtual network')
+          param virtualNetworkDefaultSubnetAddressPrefix string
+
+          var virtualNetworkName = 'ToyTruck-vnet'
+          var virtualMachineName = 'ToyTruckServer'
+          var networkInterfaceName = 'YOUR-NETWORK-INTERFACE-NAME'
+          var publicIPAddressName = 'ToyTruckServer-ip'
+          var networkSecurityGroupName = 'ToyTruckServer-nsg'
+          var virtualNetworkDefaultSubnetName = 'default'
+          var virtualMachineImageReference = {
+            publisher: 'canonical'
+            offer: '0001-com-ubuntu-server-focal'
+            sku: '20_04-lts-gen2'
+            version: 'latest'
+          }
+          var virtualMachineOSDiskName = 'YOUR-OS-DISK-NAME'
+
+          resource networkSecurityGroup 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
+            name: networkSecurityGroupName
+            location: location
+          }
+
+          resource publicIPAddress 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
+            name: publicIPAddressName
+            location: location
+            sku: {
+              name: publicIPAddressSkuName
+              tier: 'Regional'
+            }
+            properties: {
+              publicIPAddressVersion: 'IPv4'
+              publicIPAllocationMethod: 'Static'
+              idleTimeoutInMinutes: 4
+            }
+          }
+
+          resource virtualMachine 'Microsoft.Compute/virtualMachines@2024-07-01' = {
+            name: virtualMachineName
+            location: location
+            properties: {
+              hardwareProfile: {
+                vmSize: virtualMachineSizeName
+              }
+              storageProfile: {
+                imageReference: virtualMachineImageReference
+                osDisk: {
+                  osType: 'Linux'
+                  name: virtualMachineOSDiskName
+                  createOption: 'FromImage'
+                  caching: 'ReadWrite'
+                  managedDisk: {
+                    storageAccountType: virtualMachineManagedDiskStorageAccountType
+                  }
+                  deleteOption: 'Delete'
+                  diskSizeGB: 30
+                }
+              }
+              osProfile: {
+                computerName: virtualMachineName
+                adminUsername: virtualMachineAdminUsername
+                adminPassword: virtualMachineAdminPassword
+                linuxConfiguration: {
+                  disablePasswordAuthentication: false
+                  provisionVMAgent: true
+                  patchSettings: {
+                    patchMode: 'ImageDefault'
+                    assessmentMode: 'ImageDefault'
+                  }
+                  enableVMAgentPlatformUpdates: false
+                }
+                allowExtensionOperations: true
+              }
+              networkProfile: {
+                networkInterfaces: [
+                  {
+                    id: networkInterface.id
+                    properties: {
+                      deleteOption: 'Detach'
+                    }
+                  }
+                ]
+              }
+              diagnosticsProfile: {
+                bootDiagnostics: {
+                  enabled: true
+                }
+              }
+            }
+          }
+
+          resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+            name: virtualNetworkName
+            location: location
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  virtualNetworkAddressPrefix
+                ]
+              }
+              subnets: [
+                {
+                  name: virtualNetworkDefaultSubnetName
+                  properties: {
+                    addressPrefix: virtualNetworkDefaultSubnetAddressPrefix
+                    privateEndpointNetworkPolicies: 'Disabled'
+                    privateLinkServiceNetworkPolicies: 'Enabled'
+                  }
+                }
+              ]
+              enableDdosProtection: false
+            }
+
+            resource defaultSubnet 'subnets' existing = {
+              name: virtualNetworkDefaultSubnetName
+            }
+          }
+
+          resource networkInterface 'Microsoft.Network/networkInterfaces@2024-05-01' = {
+            name: networkInterfaceName
+            location: location
+            properties: {
+              ipConfigurations: [
+                {
+                  name: 'ipconfig1'
+                  properties: {
+                    privateIPAllocationMethod: 'Dynamic'
+                    publicIPAddress: {
+                      id: publicIPAddress.id
+                    }
+                    subnet: {
+                      id: virtualNetwork::defaultSubnet.id
+                    }
+                    primary: true
+                    privateIPAddressVersion: 'IPv4'
+                  }
+                }
+              ]
+              enableAcceleratedNetworking: true
+              enableIPForwarding: false
+              disableTcpStateTracking: false
+              networkSecurityGroup: {
+                id: networkSecurityGroup.id
+              }
+              nicType: 'Standard'
+            }
+          }
+          ```
+
+        - *main.parameters.production.json* file:
+          ```JSON
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "virtualMachineSizeName": {
+                "value": "Standard_D2s_v3"
+              },
+              "virtualMachineManagedDiskStorageAccountType": {
+                  "value": "Premium_LRS"
+              },
+              "virtualMachineAdminUsername": {
+                  "value": "toytruckadmin"
+              },
+              "virtualNetworkAddressPrefix": {
+                  "value": "10.0.0.0/16"
+              },
+              "virtualNetworkDefaultSubnetAddressPrefix": {
+                  "value": "10.0.0.0/24"
+              }
+            }
+          }
+          ```
+
+6. Test and deploy your converted template
+    1. Test phase
+        - The test phase consists of two steps:
+          + 1. Run the ARM template deployment what-if operation.
+          + 2. Do a test deployment.
+
+        1. What is the ARM template deployment what-if operation?
+            - The ARM template deployment what-if operation can help you verify your converted templates before you deploy them.
+
+        2. Test deployment
+            - Before you introduce your converted Bicep template to production, consider running multiple test deployments
+    
+    2. Deploy phase
+        - The deploy phase consists of four steps:
+          + 1. Prepare a rollback plan.
+          + 2. Run the what-if operation against production.
+          + 3. Deploy the Bicep file manually.
+          + 4. Run smoke tests.
+
+        1. Prepare a rollback plan
+            - The ability to recover from a failed deployment is crucial. 
+              + Spend time developing a rollback plan to use if any breaking changes are introduced into your environments.
+              + Your plan should take into account your organization's business continuity and disaster recovery (BCDR) strategy.
+              + Take inventory of the types of resources that are deployed, like virtual machines, web apps, and databases.
+              + You should also consider each resource's data plane. 
+        
+        2. Run the what-if operation against production
+            - Be sure to use production parameter values, and consider documenting the results.
+
+        3. Deploy manually
+            - If you'll use the converted template in a pipeline, like in Azure DevOps or GitHub Actions, consider running the deployment from your local machine first.
+              + It's better to verify the functionality of the template before you add the template to your production pipeline.
+
+        4. Run smoke tests
+            - When your deployment is finished, it's a good idea to run a series of smoke tests.
+              + A smoke test is a simple check that validates that your application or workload functions.
+              + For example, test to see whether your web app is accessible through normal access channels, like the public internet or across a corporate VPN.
+              + For databases, try to make a database connection and run a series of queries.
+              + With virtual machines, sign in to the virtual machine and make sure that all services are running.
+
+7. Exercise - Test and deploy your converted template
+    1. Run what-if
+        ```
+        az deployment group what-if --mode Complete --resource-group ToyTruck --template-file main.bicep --parameters main.parameters.production.json
+        ```
+
+        1. Review the what-if output
+
+    2. Update the template
+    3. Run the what-if command again
+    4. Deploy your template
+        ```
+        az deployment group create --resource-group ToyTruck --template-file main.bicep --parameters main.parameters.production.json
+        ```
+
+    5. Clean up the resources
+        ```Azure CLI
+        az group delete --resource-group ToyTruck --yes --no-wait
+        ```
+
+8. Workflow to migrate your resources to Bicep
+    - The five phases are convert, migrate, refactor, test, and deploy
+      ![Migrate Bicep Phases](./assets/Migrate%20Azure%20Resources%20Bicep/8-migrate-bicep-numbers.png)
+
+      + Phase 1: Convert
+        - The goal of the convert phase of migrating your resources is to capture an initial representation of your Azure resources.
+          + The Bicep file you create in this phase isn't complete, and it's not ready to be used.
+          + However, the file gives you a starting point for your migration.
+
+        - The convert phase consists of two steps:
+          + 1. Capture a representation of your Azure resources.
+          + 2. Convert the JSON representation to Bicep by using the **decompile** command.
+
+      + Phase 2: Migrate
+        - The goal of the migrate phase is to create the first draft of your deployable Bicep file and to ensure that it defines all Azure resources that are in scope for the migration.
+
+        - The migrate phase consists of three steps:
+          + 1. Create a new empty Bicep file.
+          + 2. Copy each resource from your decompiled template.
+          + 3. Identify and re-create any missing resources.
+
+      + Phase 3: Refactor
+        - The main focus of the refactor phase is to improve the quality of your Bicep code.
+          + These improvements can include changes, like adding code comments, that align the template with your template standards.
+
+        - The refactor phase consists of eight steps:
+          + 1. Review resource API versions.
+          + 2.  Review the linter suggestions in your new Bicep file.
+          + 3.  Revise parameters, variables, and symbolic names.
+          + 4.  Simplify expressions.
+          + 5.  Review child and extension resources.
+          + 6.  Modularize.
+          + 7.  Add comments and descriptions.
+          + 8.  Follow Bicep best practices.
+
+      + Phase 4: Test
+        - The goal of the test phase of migrating your resources to Bicep is to verify the integrity of your migrated templates and to do a test deployment.
+
+        - The test phase consists of two steps:
+          + 1. Run the ARM template deployment what-if operation.
+          + 2. Do a test deployment.
+
+      + Phase 5: Deploy
+        - The goal of the deploy phase of migrating your resources to Bicep is to deploy your final Bicep file to production.
+          + Before the production deployment, you need to consider a few things.
+
+        - The deploy phase consists of four steps:
+          + 1. Prepare a rollback plan.
+          + 2. Run the what-if operation against production.
+          + 3. Deploy your template manually.
+          + 4. Run smoke tests.
 
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
