@@ -6475,6 +6475,1729 @@
           + 3. Deploy your template manually.
           + 4. Run smoke tests.
 
+# Part 3: Advanced Bicep: https://learn.microsoft.com/en-us/training/paths/advanced-bicep/
+
+## Deploy resources to subscriptions, management groups, and tenants by using Bicep
+- https://learn.microsoft.com/en-us/training/modules/deploy-resources-scopes-bicep/
+
+1. Introduction
+    - Some Azure resources are deployed outside resource groups, and are instead deployed at various scopes: a subscription, a management group, or even your whole tenant.
+
+2. Example scenario
+    - Suppose you're responsible for deploying and configuring Azure infrastructure at a toy company.
+      + Your R&D team is designing a new toy as part of a top-secret project called Project Teddybear.
+      + The team has asked you to create a dedicated Azure subscription to help prevent the project information from accidentally being exposed to the rest of the company.
+
+    - The R&D team plans to use virtual machines within the subscription, but to save money, the team has asked for your help to ensure that only certain virtual machine SKUs can be created within that subscription.
+      + The team also needs your assistance to create a virtual network in the subscription, because that network will eventually need to connect to the main corporate network, which you help to manage.
+
+    - Here's a diagram that shows how these components fit within their Azure subscription:
+      ```
+      Subscription
+        --> Resource group
+            --> Virtual network
+        --> Policy
+      ```
+
+    - You know the R&D team has recently been given a lot of new funding, so it's likely to have more secret projects in the future.
+      + You decide to create reusable templates for each of its special projects.
+
+    - **targetScope** & **scope** keyword: **resourceGroup()**, **subscription()**, **managementGroup()**, and **tenant()** functions
+
+2. Understand deployment scopes
+    - Virtual machines, Azure SQL logical servers and databases, storage accounts, virtual networks, and most other Azure resources need to be placed in a resource group.
+      + However, some resources can―or must―be deployed in a different way.
+      + These resources are ordinarily used to control your Azure environment's behavior.
+
+    1. The Azure resource hierarchy
+        - Azure has a hierarchical resource structure with multiple levels of management.
+        - Here's a diagram showing how your toy company might organize its Azure environment:
+          ![Azure resource hierarchy](./assets/Deploy%20Resources%20to%20subscription%20tenant/2-azure%20resource%20hierarchy.png)
+          
+          ```Azure resource hierarchy
+          (1) Tenant
+              --> Root management group
+                  --> (2) Production (Management group)
+                      --> (3) Marketing (Subscription)
+                          --> (4) Launch-1 (Resource group)
+                          --> (4) Launch-2 (Resource group)
+                      --> (3) Products (Subscription)
+                          --> (4) Product-A (Resource group)
+                  --> (2) Non-production (Management group)
+                      --> (3) Project Teddybear (Subscription)
+                          --> (4) Networking (Resource group)
+          ```
+          + 1. Tenant
+              - corresponds to your Microsoft Entra instance.
+              - An organization ordinarily has only one Microsoft Entra instance.
+              - This instance acts as the root of the resource hierarchy.
+
+          + 2. Management groups
+              - provide a way to organize Azure subscriptions.
+              - Each tenant has a single root management group, and you can establish your own hierarchy of management groups under it. 
+                + You might create separate management groups for the various parts of your organization, or for subscriptions that have their own security or governance requirements.
+                + You can apply policy and access-control restrictions to management groups, and all subscriptions below that management group in the hierarchy inherit these restrictions.
+                + Management groups aren't deployed to regions, and they have no impact on your resources' locations.
+
+          + 3. Subscriptions
+              - act as billing accounts, and they contain resource groups and resources.
+              - Like management groups, subscriptions have no location and don't restrict where your resources are deployed.
+
+          + 4. Resource groups
+              - are logical containers for your resources.
+              - With resource groups, you can manage and control related resources as a single unit.
+                + Resources such as virtual machines, Azure App Service plans, storage accounts, and virtual networks must be put into a resource group.
+                + Resource groups are created in a location so that Azure can track the metadata for the resources in the group, but resources inside the group can be deployed to other locations.
+
+        - This is a fairly basic scenario that shows how you can use management groups.
+        - Your organization might also consider implementing a **landing zone**, which is a set of Azure resources and configuration you need to get started with a production Azure environment. 
+        - The **enterprise-scale landing zone** is a proven approach to using management groups and subscriptions to effectively manage your Azure resources:
+          ![enterprise-scale landing zone](./assets/Deploy%20Resources%20to%20subscription%20tenant/2-hierarchy_enterprise%20scale%20landing%20zone.png)
+
+          ```hierarchy enterprise-scale landing zone
+          Tenant
+            --> Root management group
+                --> Toy Company management group
+                    --> PlatformManagement (Management group)
+                        --> Management (Subscription)
+                        --> Connectivity (Subscription)
+                    --> Application Landing Zones (Management group)
+                        --> Project Teddybear (Subscription)
+                        --> Project Jigsaw (Subscription)
+          ```
+
+        - Whichever model you follow, by understanding the various levels of the hierarchy, you can start to apply flexible controls on how your Azure environment is used and managed. 
+          + By using Bicep, you can manage these controls with all the benefits of infrastructure as code.
+
+        - NOTE: There are also some other resources that are deployed at specific scopes.
+          + **Extension resources** are deployed at the scope of another Azure resource. 
+          + For example, a resource lock is an extension resource, which is deployed to a resource such as a storage account.
+
+    2. Subscription-scoped resources
+        - You might deploy resources to a subscription when:
+          + 1. You need to create a new resource group.
+          + 2. You need to grant access to all the resources within a subscription.
+            - For example, if your HR department has an Azure subscription that contains all the department's Azure resources, you might create role assignments to allow everybody in the HR department to read the contents of the subscription.
+          + 3. You're using Azure Policy, and you want to define or apply a policy to all resources within the subscription.
+            - For example, your toy company's R&D department has asked you to deploy a policy that restricts the list of virtual machine SKUs that can be created within the team's subscription.
+
+    3. Management group-scoped resources
+        - You might deploy resources to a management group when:
+          + 1. You need to grant access to all the resources within any subscriptions that fall under the management group hierarchy.
+            - For example, your cloud operations team might require access to every subscription in your organization.
+              + You can create a role assignment at your root management group, which grants your cloud operations team access to everything in Azure.
+            - CAUTION: Be extremely careful when you grant access to resources by using management groups, and especially the root management group.
+              + Remember that every resource under the management group in the hierarchy inherits the role assignment.
+              + Make sure that your organization follows best practices for identity management and authentication, and that it follows the principle of least privilege; that is, don't grant any access that isn't required.
+
+          + 2. You need to apply policies across your entire organization.
+            - For example, your organization might have a policy that resources can't be created in certain geographic regions, under any circumstances. 
+              + You might apply a policy to your root management group that will block the creation of resources in that region.
+
+    4. Tenant-scoped resources
+        - You might deploy resources to your tenant when:
+          + 1. You need to create Azure subscriptions.
+            - When you use management groups, subscriptions sit under management groups in the resource hierarchy, but a subscription is deployed as a tenant-scoped resource.
+            - NOTE: Not all Azure customers can create subscriptions by using infrastructure as code.
+              + Depending on your billing relationship with Microsoft, this might not be possible.
+
+          + 2. You're creating or configuring management groups. 
+            - Azure creates single root management group when you enable management groups for your tenant, and you can create multiple levels of management groups under it.
+              + You can use Bicep to define your whole management group hierarchy.
+              + You can also assign subscriptions to management groups.
+            - **Tenant-scoped deployments require special permission**: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/deploy-to-tenant#required-access
+
+            - TIP: You can't create policies or role assignments at the tenant scope.
+              + However, if you need to grant access or apply policies across your whole organization, you can deploy these resources to the root management group.
+
+    5. Resource IDs
+        - subscription-scoped resource id:
+          ```
+          /subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/ToyDevelopment
+          ```
+          + NOTE: Although subscriptions are considered children of management groups, their resource IDs don't include a management group ID.
+            - Azure tracks the relationship between subscriptions and management groups in a way that's different from other resource relationships.
+            - This gives you the flexibility to move subscriptions between management groups without having to change all the resource IDs.
+
+        - When you're working with resources at a management group or tenant scope, resource IDs can look a bit different than normal.
+        - resource ID for a management group:
+          ```
+          /providers/Microsoft.Management/managementGroups/ProductionMG
+          ```
+          + NOTE: Management groups have both an identifier and a display name.
+            - The display name is a human-readable description of the management group.
+            - You can change the display name without affecting the management group's ID.
+
+        - When a resource is deployed at a management group scope, its resource ID includes the management group ID.
+        - Here's an example resource ID for a role definition that has been created at a management group scope:
+          ```
+          /providers/Microsoft.Management/managementGroups/ProductionMG/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000000
+          ```
+
+        - Another role definition might be defined at a subscription scope, so its resource ID looks a little different:
+          ```
+          /subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000000
+          ```
+
+        - For example, you can make an informed choice about whether you should create a policy definition at the scope of a resource group, subscription, or management group.
+
+3. Deploy templates at various scopes
+    1. Specify the target scope for a Bicep file
+        - Use the **targetScope** keyword
+          ```bicep
+          targetScope = 'managementGroup'
+
+          resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2024-05-01' = {
+            // ...
+          }
+          ```
+          - **targetScope**: *resourceGroup (default)*, *subscription*, *managementGroup*, or *tenant*
+          - The Azure CLI and Azure PowerShell cmdlets provide arguments to specify the management group.
+
+    2. Create resource groups
+        - create a resource group with subscription-scoped resource:
+          ```Bicep
+          targetScope = 'subscription'
+
+          resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-07-01' = {
+            name: 'example-resource-group'
+            location: 'westus'
+          }
+          ```
+
+    3. Submit a deployment
+        - use a different Azure CLI command for each deployment scope
+          ```
+          To deploy at this scope:	  Run this Azure CLI command:
+          Resource group	            az deployment group create
+          Subscription	              az deployment sub create
+          Management group	          az deployment mg create
+          Tenant	                    az deployment tenant create
+          ```
+        - Azure stores metadata about each deployment.
+        - Unlike deployments at the resource group scope, there's some information you need to provide when you deploy at other scopes so that Azure can store the metadata correctly:
+          + Location: The deployment metadata has to be stored in a location that you specify.
+          + Name: All deployments in Azure have a name.
+
+        - The combination of the deployment's scope, location, and name must be unique.
+
+4. Exercise - Deploy a subscription-scoped resource
+    1. Create a subscription-scoped template
+        - *main.bicep* file:
+          ```bicep
+          targetScope='subscription
+          ```
+    2. Add a policy definition
+        ```bicep
+        var policyDefinitionName = 'DenyFandGSeriesVMs'
+
+        resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2024-05-01' = {
+          name: policyDefinitionName
+          properties: {
+            policyType: 'Custom'
+            mode: 'All'
+            parameters: {}
+            policyRule: {
+              if: {
+                allOf: [
+                  {
+                    field: 'type'
+                    equals: 'Microsoft.Compute/virtualMachines'
+                  }
+                  {
+                    anyOf: [
+                      {
+                        field: 'Microsoft.Compute/virtualMachines/sku.name'
+                        like: 'Standard_F*'
+                      }
+                      {
+                        field: 'Microsoft.Compute/virtualMachines/sku.name'
+                        like: 'Standard_G*'
+                      }
+                    ]
+                  }
+                ]
+              }
+              then: {
+                effect: 'deny'
+              }
+            }
+          }
+        }
+        ```
+        - The resource type is equal to *Microsoft.Compute/virtualMachines*.
+        - The *sku.name* property either begins with *Standard_F* or *Standard_G*.
+
+        - WARNING: Be careful when you use the **deny** policy effect for your policy definitions, especially at wide scopes such as subscriptions and management groups. 
+          + If the definition isn't created correctly, it can have unexpected effects that can lead to outages.
+          + It's better to start with the **audit** policy effect, and then switch to the **deny** effect only after you've seen it work well over a period of time.
+
+    3. Assign the policy
+        - deploy a second subscription-scoped resource that applies the policy definition to the subscription:
+          ```bicep
+          var policyAssignmentName = 'DenyFandGSeriesVMs'
+
+          resource policyAssignment 'Microsoft.Authorization/policyAssignments@2024-05-01' = {
+            name: policyAssignmentName
+            properties: {
+              policyDefinitionId: policyDefinition.id
+            }
+          }
+          ```
+          - Notice that you don't explicitly configure the policy assignment to apply to the whole subscription. Bicep understands this, because the template will be deployed at the subscription scope.
+
+    4. Verify your template
+        ```bicep
+        targetScope = 'subscription'
+
+        var policyDefinitionName = 'DenyFandGSeriesVMs'
+        var policyAssignmentName = 'DenyFandGSeriesVMs'
+
+        resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2024-05-01' = {
+          name: policyDefinitionName
+          properties: {
+            policyType: 'Custom'
+            mode: 'All'
+            parameters: {}
+            policyRule: {
+              if: {
+                allOf: [
+                  {
+                    field: 'type'
+                    equals: 'Microsoft.Compute/virtualMachines'
+                  }
+                  {
+                    anyOf: [
+                      {
+                        field: 'Microsoft.Compute/virtualMachines/sku.name'
+                        like: 'Standard_F*'
+                      }
+                      {
+                        field: 'Microsoft.Compute/virtualMachines/sku.name'
+                        like: 'Standard_G*'
+                      }
+                    ]
+                  }
+                ]
+              }
+              then: {
+                effect: 'deny'
+              }
+            }
+          }
+        }
+
+        resource policyAssignment 'Microsoft.Authorization/policyAssignments@2024-05-01' = {
+          name: policyAssignmentName
+          properties: {
+            policyDefinitionId: policyDefinition.id
+          }
+        }
+        ```
+
+    5. Deploy the template
+        - Set default subscription:
+          ```azure cli
+          az account set --subscription "Your Subscription Name or ID"
+
+          az account list --output table
+          az login
+
+          az bicep install && az bicep upgrade
+          ```
+
+    6. Deploy the template to Azure
+        ```Azure CLI, PS1
+        templateFile="main.bicep"
+        today=$(date +"%d-%b-%Y")
+        deploymentName="sub-scope-"$today
+
+        az deployment sub create --name $deploymentName --location westus --template-file $templateFile
+        ```
+        - NOTE: If you receive an error message with the code **AuthorizationFailed**, you probably don't have permission to deploy subscription-scoped resources.
+          + Ask your Azure administrator to grant you permissions.
+
+    7. Verify the deployment
+        - Go to **Subscription**, then **deployments** setting on Azure portal.
+
+    8. Clean up the resources
+        ```
+        subscriptionId=$(az account show --query 'id' --output tsv)
+
+        az policy assignment delete --name 'DenyFandGSeriesVMs' --scope "/subscriptions/$subscriptionId"
+        az policy definition delete --name 'DenyFandGSeriesVMs' --subscription $subscriptionId
+        ```
+
+5. Deploy resources to multiple scopes
+    - Sometimes you need to deploy resources across multiple levels of your hierarchy from within one deployment.
+    - Here are some situations where you might want to do this:
+      + You need to deploy resources across two different resource groups. 
+        - For example, you might want to create a network security group in a shared resource group and also deploy a network interface for a virtual machine in a resource group for your application.
+      
+      + You're using a template to create a resource group, which is a subscription-scoped resource, and then want to deploy a storage account and other Azure resources to that resource group by using a resource group-scoped deployment.
+
+      + You're deploying a management group hierarchy and also want to deploy some subscriptions, which are tenant-scoped resources.
+
+
+    1. Specify the scope for a module
+        - You can use Bicep modules to deploy a set of resources at a scope that's different from the **targetScope** specified in the file. 
+        - use **targetScope** and **scope** in module:
+        ```Bicep
+        targetScope = 'subscription'
+
+        module networkModule 'modules/network.bicep' = {
+          scope: resourceGroup('ToyNetworking')
+          name: 'networkModule'
+        }
+        ```
+
+    2. Deploy across multiple resource groups
+        - A common use of scopes is to deploy resources across multiple resource groups.
+          + Although you can't set the scope property on most Azure resources, you can use modules to tell Bicep that a set of resources should be deployed to a different resource group.
+
+        - For example, you might want to create a single set of Bicep files that deploys a virtual network and its associated resources to a shared resource group named **ToyNetworking**, and then deploy a network interface to a different resource group.
+        - Here's what the Bicep file looks like:
+          ```Bicep
+          module networkModule 'modules/network.bicep' = {
+            // Highlight
+            scope: resourceGroup('ToyNetworking')
+            name: 'networkModule'
+          }
+
+          resource networkInterface 'Microsoft.Network/networkInterfaces@2024-01-01' = {
+            name: 'production-nic'
+            location: resourceGroup().location
+            properties: {
+              ipConfigurations: [
+                {
+                  name: 'toy-subnet-ip-configuration'
+                  properties: {
+                    subnet: {
+                      // Highlight
+                      id: networkModule.outputs.subnetResourceId
+                    }
+                  }
+                }
+              ]
+            }
+          }
+          ```
+          + After you deploy this file, you could target another resource group named **ProjectTeddybear**, like this:
+            ```
+            az deployment group create --resource-group ProjectTeddybear ...
+            ```
+
+        - You can even deploy a resource group in another subscription by including the subscription ID in the **resourceGroup** scope:
+          ```Bicep
+          module networkModule 'modules/network.bicep' = {
+            scope: resourceGroup('f0750bbe-ea75-4ae5-b24d-a92ca601da2c', 'ToyNetworking')
+            name: 'networkModule'
+          }
+          ```
+
+        - Similarly, you can use the **subscription()** scope function to deploy resources across multiple subscriptions at the subscription scope, and you can use the **managementGroup()** scope function to deploy the resources across multiple management groups.
+          + However, you can't deploy them across multiple tenants.
+
+    3. Specify the scope for a single resource
+        - Extension resources use the **scope** keyword to specify which resource they apply to.
+          + Additionally, tenant-scoped resources can use the **scope** keyword so that you can deploy them from any template.
+
+        - For example, you might use a Bicep file to create a management group hierarchy, as shown in the following example:
+          ```Bicep
+          targetScope = 'managementGroup'
+
+          resource parentManagementGroup 'Microsoft.Management/managementGroups@2023-04-01' = {
+            scope: tenant()
+            name: 'NonProduction'
+            properties: {
+              displayName: 'Non-production'
+            }
+          }
+
+          resource childManagementGroup 'Microsoft.Management/managementGroups@2023-04-01' = {
+            scope: tenant()
+            name: 'SecretRND'
+            properties: {
+              displayName: 'Secret R&D Projects'
+              details: {
+                parent: {
+                  id: parentManagementGroup.id
+                }
+              }
+            }
+          }
+          ```
+
+    4. Create a management group and subscription hierarchy
+        - **subscription alias** is a tenant-scoped resource that creates a new Azure subscription:
+          ```bicep
+          resource subscription 'Microsoft.Subscription/aliases@2024-08-01-preview'
+            scope: tenant()
+            name: subscriptionAliasName
+            properties: {
+              // ...
+            }
+          }
+          ```
+          + NOTE: When you create a subscription alias, you also specify some other properties like a billing scope.
+            - We've omitted them for clarity.
+
+        - *modules/mg-subscription-association.bicep* file:
+          ```bicep
+          targetScope = 'tenant'
+
+          @description('The name of the management group that should contain the subscription.')
+          param managementGroupName string
+
+          @description('The subscription ID to place into the management group.')
+          param subscriptionId string
+
+          resource managementGroup 'Microsoft.Management/managementGroups@2023-04-01' existing = {
+            name: managementGroupName
+          }
+
+          resource subscriptionAssociation 'Microsoft.Management/managementGroups/subscriptions@2023-04-01' = {
+            parent: managementGroup
+            name: subscriptionId
+          }
+          ```
+
+        - *main.bicep* file:
+          ```bicep
+          targetScope = 'managementGroup'
+
+          @description('The name of the subscription alias to deploy.')
+          param subscriptionAliasName string
+
+          resource parentManagementGroup 'Microsoft.Management/managementGroups@2023-04-01' = {
+            scope: tenant()
+            name: 'NonProduction'
+            properties: {
+              displayName: 'Non-production'
+            }
+          }
+
+          resource childManagementGroup 'Microsoft.Management/managementGroups@2023-04-01' = {
+            scope: tenant()
+            name: 'SecretRND'
+            properties: {
+              displayName: 'Secret R&D Projects'
+              details: {
+                parent: {
+                  id: parentManagementGroup.id
+                }
+              }
+            }
+          }
+
+          resource subscription 'Microsoft.Subscription/aliases@2024-08-01-preview'
+            scope: tenant()
+            name: subscriptionAliasName
+            properties: {
+              // ...
+            }
+          }
+
+          module subscriptionAssociation 'modules/mg-subscription-association.bicep' = {
+            name: 'subscriptionAssociation'
+            scope: tenant()
+            params: {
+              managementGroupName: childManagementGroup.name
+              subscriptionId: subscription.properties.subscriptionId
+            }
+          }
+          ```
+
+
+6. Exercise - Deploy resources to multiple scopes by using modules
+    - During the process, you'll:
+      + Update the subscription-scoped template to create a new resource group.
+      + Create a separate Bicep module with a virtual network, and use parameters to control how the virtual network is configured.
+      + Update the template to deploy the module to the resource group.
+      + Deploy the template.
+
+    - This exercise requires that you have permission to deploy subscription-scoped resources.
+
+    1. Create a resource group
+        - **main.bicep** file:
+          ```bicep
+          var resourceGroupName = 'ToyNetworking'
+
+          resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-07-01' = {
+            name: resourceGroupName
+            location: deployment().location
+          }
+          ```
+          + NOTICE: that you're defining the resource group just as you would define another resource.
+            - A resource group is a subscription-scoped resource that can be deployed and managed in Bicep files with the **targetScope** set to **subscription**.
+
+    2. Add a module to create a virtual network
+        - **modules/virtualNetwork.bicep** file:
+          ```bicep
+          param virtualNetworkName string
+          param virtualNetworkAddressPrefix string
+
+          resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-01-01' = {
+            name: virtualNetworkName
+            location: resourceGroup().location
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  virtualNetworkAddressPrefix
+                ]
+              }
+            }
+          }
+          ```
+          + NOTICE: that you haven't specified a **targetScope** for this module.
+            - You don't need to specify a target scope when the Bicep file is targeting a resource group.
+
+    3. Use the module in the subscription deployment
+        - **main.bicep** file:
+          ```bicep
+          param virtualNetworkName string
+          param virtualNetworkAddressPrefix string
+
+          module virtualNetwork 'modules/virtualNetwork.bicep' = {
+            scope: resourceGroup
+            name: 'virtualNetwork'
+            params: {
+              virtualNetworkName: virtualNetworkName
+              virtualNetworkAddressPrefix: virtualNetworkAddressPrefix
+            }
+          }
+          ```
+          + NOTICE: that you're explicitly specifying the *scope* for the module.
+            - Bicep understands that the resources within the module should be deployed to the resource group that you created earlier in the file.
+
+    4. Verify your template
+        - **main.bicep** file:
+          ```bicep
+          targetScope = 'subscription'
+
+          param virtualNetworkName string
+          param virtualNetworkAddressPrefix string
+
+          var policyDefinitionName = 'DenyFandGSeriesVMs'
+          var policyAssignmentName = 'DenyFandGSeriesVMs'
+          var resourceGroupName = 'ToyNetworking'
+
+          resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2024-05-01' = {
+            name: policyDefinitionName
+            properties: {
+              policyType: 'Custom'
+              mode: 'All'
+              parameters: {}
+              policyRule: {
+                if: {
+                  allOf: [
+                    {
+                      field: 'type'
+                      equals: 'Microsoft.Compute/virtualMachines'
+                    }
+                    {
+                      anyOf: [
+                        {
+                          field: 'Microsoft.Compute/virtualMachines/sku.name'
+                          like: 'Standard_F*'
+                        }
+                        {
+                          field: 'Microsoft.Compute/virtualMachines/sku.name'
+                          like: 'Standard_G*'
+                        }
+                      ]
+                    }
+                  ]
+                }
+                then: {
+                  effect: 'deny'
+                }
+              }
+            }
+          }
+
+          resource policyAssignment 'Microsoft.Authorization/policyAssignments@2024-05-01' = {
+            name: policyAssignmentName
+            properties: {
+              policyDefinitionId: policyDefinition.id
+            }
+          }
+
+          resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-07-01' = {
+            name: resourceGroupName
+            location: deployment().location
+          }
+
+          module virtualNetwork 'modules/virtualNetwork.bicep' = {
+            scope: resourceGroup
+            name: 'virtualNetwork'
+            params: {
+              virtualNetworkName: virtualNetworkName
+              virtualNetworkAddressPrefix: virtualNetworkAddressPrefix
+            }
+          }
+          ```
+
+        - **modules/virtualNetwork.bicep** file:
+          ```bicep
+          param virtualNetworkName string
+          param virtualNetworkAddressPrefix string
+
+          resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-01-01' = {
+            name: virtualNetworkName
+            location: resourceGroup().location
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  virtualNetworkAddressPrefix
+                ]
+              }
+            }
+          }
+          ```
+
+    5. Deploy the template to Azure
+        ```Azure CLI
+        templateFile="main.bicep"
+        today=$(date +"%d-%b-%Y")
+        deploymentName="sub-scope-"$today
+        virtualNetworkName="rnd-vnet-001"
+        virtualNetworkAddressPrefix="10.0.0.0/24"
+
+        az deployment sub create --name $deploymentName --location westus --template-file $templateFile --parameters virtualNetworkName=$virtualNetworkName virtualNetworkAddressPrefix=$virtualNetworkAddressPrefix
+        ```
+        - NOTICE: that you're passing in values for the **virtualNetworkName** and **virtualNetworkAddressPrefix** parameters.
+          + When another R&D team asks you to prepare a subscription for them, you'll be able to change these values to give that team its own virtual network.
+
+    6. Verify the deployment
+        - Go to **resource group**, then **deployments**
+
+    7. Clean up the resources
+        ```Azure CLI
+        subscriptionId=$(az account show --query 'id' --output tsv)
+
+        az policy assignment delete --name 'DenyFandGSeriesVMs' --scope "/subscriptions/$subscriptionId"
+        az policy definition delete --name 'DenyFandGSeriesVMs' --subscription $subscriptionId
+        az group delete --name ToyNetworking
+        ```
+
+        - You've successfully deployed the subscription-scoped resources, including a resource group, and you've used a module to deploy the resource to the resource group you created. 
+
+7. Exercise - Deploy resources to a management group
+    - Rather than duplicate the policy definitions and assignments in each subscription, you've decided to put all the team's subscriptions within a management group.
+      + You can then apply the policy to the entire management group instead of to each subscription individually.
+
+    - During the process, you'll:
+      + Create a new management group.
+      + Create a new management group-scoped Bicep file.
+      + Add the Azure Policy resources to the file.
+      + Link the policy assignment to the policy definition by manually constructing the resource ID.
+      + Deploy the template and verify the result.
+
+    - This exercise requires the following prerequisites:
+      + Management groups must be enabled on your Azure tenant.
+      + You need permissions for creating a new management group within your hierarchy.
+      + You need permissions for deploying Azure Policy resources to the management group.
+
+    1. Create a management group
+        - you'll create a new management group so that you don't accidentally affect any resources in another part of your Azure environment.
+          ```azure cli
+          az account management-group create --name SecretRND --display-name "Secret R&D Projects"
+          ```
+          + use the **--parent-id** parameter, and specify the name of the management group to use as the parent.
+
+    2. Create a Bicep file to deploy to a management group
+        - *main.bicep* file:
+          ```becep
+          targetScope = 'managementGroup'
+          ```
+
+    3. Add a policy definition
+        ```bicep
+        var policyDefinitionName = 'DenyFandGSeriesVMs'
+
+        resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2024-05-01' = {
+          name: policyDefinitionName
+          properties: {
+            policyType: 'Custom'
+            mode: 'All'
+            parameters: {}
+            policyRule: {
+              if: {
+                allOf: [
+                  {
+                    field: 'type'
+                    equals: 'Microsoft.Compute/virtualMachines'
+                  }
+                  {
+                    anyOf: [
+                      {
+                        field: 'Microsoft.Compute/virtualMachines/sku.name'
+                        like: 'Standard_F*'
+                      }
+                      {
+                        field: 'Microsoft.Compute/virtualMachines/sku.name'
+                        like: 'Standard_G*'
+                      }
+                    ]
+                  }
+                ]
+              }
+              then: {
+                effect: 'deny'
+              }
+            }
+          }
+        }
+        ```
+
+    4. Add a policy assignment
+        ```Bicep
+        var policyAssignmentName = 'DenyFandGSeriesVMs'
+
+        resource policyAssignment 'Microsoft.Authorization/policyAssignments@2024-05-01' = {
+          name: policyAssignmentName
+          properties: {
+            policyDefinitionId: policyDefinition.id
+          }
+        }
+        ```
+
+    5. Verify your template
+        - **main.bicep** file:
+          ```bicep
+          targetScope = 'managementGroup'
+
+          var policyDefinitionName = 'DenyFandGSeriesVMs'
+          var policyAssignmentName = 'DenyFandGSeriesVMs'
+
+          resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2024-05-01' = {
+            name: policyDefinitionName
+            properties: {
+              policyType: 'Custom'
+              mode: 'All'
+              parameters: {}
+              policyRule: {
+                if: {
+                  allOf: [
+                    {
+                      field: 'type'
+                      equals: 'Microsoft.Compute/virtualMachines'
+                    }
+                    {
+                      anyOf: [
+                        {
+                          field: 'Microsoft.Compute/virtualMachines/sku.name'
+                          like: 'Standard_F*'
+                        }
+                        {
+                          field: 'Microsoft.Compute/virtualMachines/sku.name'
+                          like: 'Standard_G*'
+                        }
+                      ]
+                    }
+                  ]
+                }
+                then: {
+                  effect: 'deny'
+                }
+              }
+            }
+          }
+
+          resource policyAssignment 'Microsoft.Authorization/policyAssignments@2024-05-01' = {
+            name: policyAssignmentName
+            properties: {
+              policyDefinitionId: policyDefinition.id
+            }
+          }
+          ```
+
+    6. Deploy the template to Azure
+        - create management group **SecretRND**:
+          ```Azure CLI
+          az account management-group create --name SecretRND --display-name "Secret R&D Projects"
+          ```
+
+        - deploy bicep:
+          ```
+          managementGroupId="SecretRND"
+          templateFile="main.bicep"
+          today=$(date +"%d-%b-%Y")
+          deploymentName="mg-scope-"$today
+
+          az deployment mg create --management-group-id $managementGroupId --name $deploymentName --location westus --template-file $templateFile
+          ```
+
+    7. Verify the deployment
+        - Go to Azure portal **All services**, search **Management groups**
+        - Select the **Secret R&D Projects** management group, search *Deployments*
+
+    8. Clean up the resources
+        ```
+        az account management-group delete --name SecretRND
+        ```
+
+8. Summary
+    - Your R&D team asked you for a dedicated Azure subscription for their secret project.
+      + The subscription had to have some Azure Policy resources and a virtual network.
+      + You decided to create a reusable Bicep template so that you can quickly set up more subscriptions for the R&D team in the future.
+
+    - In this module, you learned how to provision resources at various scopes: tenant, management group, subscription, and resource group.
+      + Although most Azure resources must be deployed to a resource group, some important situations require that you use higher-level scopes.
+      + These situations include working with Azure identity and access management (IAM) role definitions and assignments, deploying Azure Policy definitions and assignments, and creating resource groups.
+
+    - By using the targetScope keyword and scope property on modules, you can easily create reusable Bicep templates that deploy resources throughout your Azure environment.
+      + This means that you can apply all of the benefits of infrastructure as code to every part of your cloud deployment process.
+
+9. Learn more
+    - What are Azure management groups?
+      + https://learn.microsoft.com/en-us/azure/governance/management-groups/overview
+
+    -  Scopes for deployment:
+        + Tenant: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-to-tenant
+        + Management group: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-to-management-group
+        + Subscription: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-to-subscription
+        + Resource group: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-to-resource-group
+
+    - Create Azure subscriptions programmatically
+        + https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription
+
+    - Enterprise-scale landing zones
+        + https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/implementation
+
+## Extend Bicep and ARM templates using deployment scripts
+- https://learn.microsoft.com/en-us/training/modules/extend-resource-manager-template-deployment-scripts
+
+1. Introduction
+    1. Introduction
+        - Deployment scripts in Azure Resource Manager templates (ARM templates) enable custom automation for your environment management.
+          + You use deployment scripts to execute your own scripts within your ARM template deployments.
+
+    2. Example scenario
+        - Suppose you're a member of a cross-functional team that supports an application.
+          + Your team has adopted ARM templates for creating and managing the environments for your application.
+          + Part of the application environment includes staging some assets in a storage account.
+          + You've decided to use a deployment script to ensure that the storage account has the required assets.
+    
+    3. Prerequisites
+        - Either:
+          + The *Bicep extension for Visual Studio Code*, installed locally.
+            - https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-bicep
+          + The *Azure Resource Manager Tools for Visual Studio Code* extension, installed locally.
+            - https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools
+
+        - Either:
+          + The latest *Azure CLI* tools installed locally.
+            - https://learn.microsoft.com/en-us/cli/azure/install-azure-cli
+          + The latest *Azure PowerShell* version installed locally.
+            - https://learn.microsoft.com/en-us/powershell/azure/install-az-ps
+
+2. What are deployment scripts?
+    1. What are deployment scripts?
+        - deploymentScripts resources are either PowerShell or Bash scripts that run in a Docker container as part of your template deployment.
+          + The default container images have either the Azure CLI or Azure PowerShell available.
+          + These scripts run during the ARM template processing, so you can add custom behavior to the deployment process.
+
+        - Deployment scripts use a **managed identity** to authenticate to Azure.
+          + A managed identity is a service principal whose credential and lifecycle are managed by the Azure platform.
+          + This identity is what the Azure PowerShell or Azure CLI commands will use to act on the environment.
+          + Because you assign the identity, you control the scope of what a deploymentScripts resource can affect.
+
+        - The deploymentScripts resource produces output that other resources in the deployment can use.
+          + You can then look up information from an external system or provide data based on the current state of your environment to affect the rest of the deployment.
+
+    2. How deployment scripts work
+        - A *deploymentScripts* resource takes a user-provided script (either from the template or by URI) and possibly some supporting scripts, and runs them in an Azure container instance.
+          + That container instance is assigned the managed identity that you provide.
+          + The scripts and their output are stored in a file share for an Azure storage account.
+
+    3. Deployment script structure
+        - To add a custom behavior to an ARM template, you start with the *deploymentScripts* resource.
+          ```bicep
+          resource myFirstDeploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+            name: 'myFirstDeploymentScript'
+            location: resourceGroup().location
+            kind: 'AzurePowerShell'
+            identity: {
+              type: 'UserAssigned'
+              userAssignedIdentities: {
+                '/subscriptions/01234567-89AB-CDEF-0123-456789ABCDEF/resourcegroups/deploymenttest/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myscriptingid': {}
+              }
+            }
+
+            properties: {
+              azPowerShellVersion: '3.0'
+              scriptContent: '''
+                $output = 'Hello Learner!'
+                Write-Output $output
+                $DeploymentScriptOutputs = @{}
+                $DeploymentScriptOutputs['text'] = $output
+              '''
+              retentionInterval: 'P1D'
+            }
+          }
+
+          output scriptResult string = myFirstDeploymentScript.properties.outputs.text
+          ```
+          + **kind** (required): The type of script to run (either **AzurePowerShell** or **AzureCLI**).
+          + **identity** (required): The managed identity that the container instance will use.
+            - You can create the managed identity ahead of time and specify it like the following example, or you can create it in the template and reference it there.
+          + A **name** for the **deploymentScripts** resource.
+          + The **type** and **apiVersion** values.
+          + The **location** (location value) where the supporting resources will be created.
+          + The main part of **properties** section is the **scriptContent**, which specifies the actual script to execute.
+            - Notice that the **scriptContent** uses a multi-line string.
+            - In Bicep, you can specify a multi-line string by using three quotes together (**'''**) before and after your string.
+
+        - It's common for a deployment script to pass outputs back to the deployment
+          + For a PowerShell script, you pass outputs back by creating a variable named **$DeploymentScriptOutputs**, which needs to be a hash table.
+          + The example script initializes the hash table and then creates an output called **text**, which takes its value from the **$output** local variable.
+            ```bicep
+            $output = 'Hello Learner!'
+            Write-Output $output
+            $DeploymentScriptOutputs = @{}
+            $DeploymentScriptOutputs['text'] = $output
+            ```
+
+          + TIP: You can also write deployment scripts in Bash.
+            - To create outputs from a Bash script, you need to create a JSON file in a location specified by the **AZ_SCRIPTS_OUTPUT_PATH** environment variable.
+
+        - Within the **properties** section, you also define the various options that **deploymentScripts** can take.
+          + In this module, we'll keep it simple and add just enough to get the script to run.
+          + At a minimum, you need to provide the version of Azure PowerShell or the Azure CLI to use, a script to run, and a retention interval.
+
+    4. Include script files
+        - Embedding scripts inline in templates can be cumbersome, hard to read and understand, and difficult to change.
+          + Bicep uses the **loadTextContent()** function to embed an external text file in your deployment.
+          + When Bicep transpiles your template into JSON, it embeds the external file into the template it emits.
+
+        ```bicep
+        properties: {
+          azPowerShellVersion: '3.0'
+          scriptContent: loadTextContent('myscript.ps1')
+          retentionInterval: 'P1D'
+        }
+        ```
+
+3. Exercise - Add a deployment script to an ARM template
+    - As part of your team's application-deployment process, you need to create a storage account and stage a file in blob storage for the application to read.
+      + Up to this point, you've been manually copying the file every time a new environment has been set up.
+      + You decide to use a deployment script to automate this step as part of your environment-creation process.
+
+    1. Create the starting template
+        - You start with an existing template that your team has been using. 
+          + The template creates the storage account, sets up blob services and requires HTTPS, and creates the blob container for your configuration files.
+
+        - **main.bicep** file:
+          ```bicep
+          var storageAccountName = 'storage${uniqueString(resourceGroup().id)}'
+          var storageBlobContainerName = 'config'
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+            name: storageAccountName
+            tags: {
+              displayName: storageAccountName
+            }
+            location: resourceGroup().location
+            kind: 'StorageV2'
+            sku: {
+              name: 'Standard_LRS'
+              tier: 'Standard'
+            }
+            properties: {
+              allowBlobPublicAccess: true
+              encryption: {
+                services: {
+                  blob: {
+                    enabled: true
+                  }
+                }
+                keySource: 'Microsoft.Storage'
+              }
+              supportsHttpsTrafficOnly: true
+            }
+
+            resource blobService 'blobServices' existing = {
+              name: 'default'
+            }
+          }
+
+          resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2019-04-01' = {
+            parent: storageAccount::blobService
+            name: storageBlobContainerName
+            properties: {
+              publicAccess: 'Blob'
+            }
+          }
+          ```
+
+    2. Add a user-assigned managed identity
+        - Next, you need to create a user-assigned managed identity.
+          + Given the infrastructure-as-code approach, you can create the identity in the template.
+
+        - Edit **main.bicep** file:
+          ```bicep
+          var userAssignedIdentityName = 'configDeployer'
+
+          resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
+            name: userAssignedIdentityName
+            location: resourceGroup().location
+          }
+          ```
+
+    3. Set the contributor role for the managed identity
+        - Now that you have a managed identity defined, you can assign it a role with rights to the resource group.
+          + You'll assign it **the Contributor role**
+            - https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles#contributor
+          + You identify a role by its role definition ID, which is a GUID.
+          + The **Contributor** role is built into Azure so the role definition ID is documented.
+
+        - The role assignment also needs a GUID name.
+          + You can use the **guid** function to create a GUID that's unique to the resource group and role name.
+            - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/template-functions-string#guid
+
+        - Update **main.bicep** file:
+          ```bicep
+          var roleAssignmentName = guid(resourceGroup().id, 'contributor')
+          var contributorRoleDefinitionId = resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+
+          // NOTE: Under the resource definitions
+          resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+            name: roleAssignmentName
+            properties: {
+              roleDefinitionId: contributorRoleDefinitionId
+              principalId: userAssignedIdentity.properties.principalId
+              principalType: 'ServicePrincipal'
+            }
+          }
+          ```
+
+    4. Create the deployment script
+        - Now, you have all the prerequisites for the deployment script.
+          + You'll start with the common values that the deployment script needs. 
+          + There are two dependencies, the role assignment and the blob storage container.
+          + Your script needs both of those to exist before it can run.
+
+        - Update **main.bicep** file:
+          ```bicep
+          var deploymentScriptName = 'CopyConfigScript'
+
+          // NOTE: Under the resource definitions
+          resource deploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+            name: deploymentScriptName
+            location: resourceGroup().location
+            kind: 'AzurePowerShell'
+            identity: {
+              type: 'UserAssigned'
+              userAssignedIdentities: {
+                '${userAssignedIdentity.id}': {}
+              }
+            }
+            dependsOn: [
+              roleAssignment
+              blobContainer
+            ]
+
+            properties: {
+              azPowerShellVersion: '3.0'
+              scriptContent: '''
+                Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/Azure/azure-docs-json-samples/master/mslearn-arm-deploymentscripts-sample/appsettings.json' -OutFile 'appsettings.json'
+                $storageAccount = Get-AzStorageAccount -ResourceGroupName 'learndeploymentscript_exercise_1' | Where-Object { $_.StorageAccountName -like 'storage*' }
+                $blob = Set-AzStorageBlobContent -File 'appsettings.json' -Container 'config' -Blob 'appsettings.json' -Context $storageAccount.Context
+                $DeploymentScriptOutputs = @{}
+                $DeploymentScriptOutputs['Uri'] = $blob.ICloudBlob.Uri
+                $DeploymentScriptOutputs['StorageUri'] = $blob.ICloudBlob.StorageUri
+              '''
+              retentionInterval: 'P1D'
+            }
+          }
+
+          output fileUri string = deploymentScript.properties.outputs.Uri
+          ```
+
+    5. Add a template output
+        ```bicep
+        output fileUri string = deploymentScript.properties.outputs.Uri
+        ```
+
+        - Now that you have a deployment script uploading a file into Azure Blob Storage, you might need to reference that file location in later automation. (Perhaps you'll run a test to validate that the file is where you think it should be.)
+
+    6. Verify your template
+        - **main.bicep** file:
+          ```bicep
+          var storageAccountName = 'storage${uniqueString(resourceGroup().id)}'
+          var storageBlobContainerName = 'config'
+          var userAssignedIdentityName = 'configDeployer'
+          var roleAssignmentName = guid(resourceGroup().id, 'contributor')
+          var contributorRoleDefinitionId = resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+          var deploymentScriptName = 'CopyConfigScript'
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+            name: storageAccountName
+            tags: {
+              displayName: storageAccountName
+            }
+            location: resourceGroup().location
+            kind: 'StorageV2'
+            sku: {
+              name: 'Standard_LRS'
+              tier: 'Standard'
+            }
+            properties: {
+              allowBlobPublicAccess: true
+              encryption: {
+                services: {
+                  blob: {
+                    enabled: true
+                  }
+                }
+                keySource: 'Microsoft.Storage'
+              }
+              supportsHttpsTrafficOnly: true
+            }
+
+            resource blobService 'blobServices' existing = {
+              name: 'default'
+            }
+          }
+
+          resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2019-04-01' = {
+            parent: storageAccount::blobService
+            name: storageBlobContainerName
+            properties: {
+              publicAccess: 'Blob'
+            }
+          }
+
+          resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
+            name: userAssignedIdentityName
+            location: resourceGroup().location
+          }
+
+          resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+            name: roleAssignmentName
+            properties: {
+              roleDefinitionId: contributorRoleDefinitionId
+              principalId: userAssignedIdentity.properties.principalId
+              principalType: 'ServicePrincipal'
+            }
+          }
+
+          resource deploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+            name: deploymentScriptName
+            location: resourceGroup().location
+            kind: 'AzurePowerShell'
+            identity: {
+              type: 'UserAssigned'
+              userAssignedIdentities: {
+                '${userAssignedIdentity.id}': {}
+              }
+            }
+            properties: {
+              azPowerShellVersion: '3.0'
+              scriptContent: '''
+                Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/Azure/azure-docs-json-samples/master/mslearn-arm-deploymentscripts-sample/appsettings.json' -OutFile 'appsettings.json'
+                $storageAccount = Get-AzStorageAccount -ResourceGroupName 'learndeploymentscript_exercise_1' | Where-Object { $_.StorageAccountName -like 'storage*' }
+                $blob = Set-AzStorageBlobContent -File 'appsettings.json' -Container 'config' -Blob 'appsettings.json' -Context $storageAccount.Context
+                $DeploymentScriptOutputs = @{}
+                $DeploymentScriptOutputs['Uri'] = $blob.ICloudBlob.Uri
+                $DeploymentScriptOutputs['StorageUri'] = $blob.ICloudBlob.StorageUri
+              '''
+              retentionInterval: 'P1D'
+            }
+            dependsOn: [
+              roleAssignment
+              blobContainer
+            ]
+          }
+
+          output fileUri string = deploymentScript.properties.outputs.Uri
+          ```
+
+    7. Deploy the template
+        - create a resource group:
+          ```
+          resourceGroupName="learndeploymentscript_exercise_1"
+          az group create --location eastus --name $resourceGroupName
+          ```
+
+        - Deploy the template to Azure:
+          ```Azure CLI
+          templateFile="main.bicep"
+          today=$(date +"%d-%b-%Y")
+          deploymentName="deploymentscript-"$today
+
+          az deployment group create --resource-group $resourceGroupName --name $deploymentName --template-file $templateFile
+          ```
+
+    8. Review the result of your template
+        1. Retrieve that file by using the URL output from the template deployment to confirm that the deployment script worked properly.
+            ```Azure CLI
+            uri=$(az deployment group show --resource-group $resourceGroupName --name $deploymentName --query 'properties.outputs.fileUri.value' --output tsv)
+
+            curl $uri
+            ```
+
+        2. You can also review the logs (and other details about the deployment) from the Azure portal or by using the following command.
+            ```
+            az deployment-scripts show-log --resource-group $resourceGroupName --name CopyConfigScript
+            ```
+
+    9. Clean up the resource group
+        ```Azure CLI
+        az group delete --name $resourceGroupName -y --no-wait
+        ```
+
+4. Parameterize deployment scripts
+    - One way to make deployment scripts more adaptable is to provide data to the script.
+    - You have two options, command-line arguments and environment variables.
+
+    1. Using command-line arguments
+        - The first option for passing data into the **deploymentScripts** resources is to customize the **arguments** property.
+          + The **arguments** property takes a string of arguments just like the ones you'd supply at the command line.
+          + These arguments are supplied to the **command** property of the Azure container instance that will run the script.
+
+        - NOTE: Some parsing happens, so test some variations of your arguments property. It'll be broken up into an array of strings the same way that **the Windows shell parses command lines**.
+          + https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-commandlinetoargvw
+
+        ```Bicep
+        properties: {
+          // NEW
+          arguments: '-Name Learner'
+          azPowerShellVersion: '3.0'
+          scriptContent: '''
+            
+            // NEW
+            param ([string]$Name)
+            $output = "Hello $Name!"
+
+            Write-Output $output
+            $DeploymentScriptOutputs = @{}
+            $DeploymentScriptOutputs['text'] = $output
+          '''
+          retentionInterval: 'P1D'
+        }
+        ```
+
+    2. Using environment variables
+        - Your second option is to create environment variables that your scripts can access.
+        ```Bicep
+        properties: {
+          arguments: '-Name Learner'
+
+          // NEW
+          environmentVariables: [
+            {
+              name: 'Subject'
+              value: 'Deployment Scripts'
+            }
+            {
+              name: 'MySecretValue'
+              secureValue: 'PleaseDoNotPrintMeToTheConsole!'
+            }
+          ]
+
+          azPowerShellVersion: '3.0'
+          scriptContent: '''
+            param ([string]$Name)
+            $output = "Hello $Name!"
+
+            // NEW
+            $output += "Learning about $env:Subject can be very helpful in your deployments."
+            $output += "Secure environment variables (like $env:MySecretValue) are only secure if you keep them that way."
+    
+            Write-Output $output
+            $DeploymentScriptOutputs = @{}
+            $DeploymentScriptOutputs['text'] = $output
+          '''
+          retentionInterval: 'P1D'
+        }
+        ```
+          - One benefit of using environment variables is that you can use **the secureValue option** for secrets that might need to be passed into deployment scripts.
+            + the secureValue option: https://learn.microsoft.com/en-us/azure/container-instances/container-instances-environment-variables#secure-values
+
+    3. Passing through parameters
+        - These scenarios are available through template functions in the **arguments** or **environmentVariables** property.
+        - You can use any of the Bicep features to access values and pass them in to the template, such as refer to properties from other resources by using their symbolic names, and refer to parameters and variables.
+    
+5. Exercise - Add parameters to deployment scripts
+    - The team's process has similar requirements, but the team needs to deploy multiple files to its storage account.
+      + The team has a PowerShell script that can take a list of files as a parameter and upload them, similar to the script that you were already using in your template.
+
+    - you'll take your previous template as a starting point and update the PowerShell script to use the one from your partner team.
+      + Then, you'll add a way to enable the person who's deploying the template to specify what configuration files to deploy (one or more).
+
+
+    1. Create the starting template
+        - **main.bicep** file:
+          ```bicep
+          var storageAccountName = 'storage${uniqueString(resourceGroup().id)}'
+          var storageBlobContainerName = 'config'
+          var userAssignedIdentityName = 'configDeployer'
+          var roleAssignmentName = guid(resourceGroup().id, 'contributor')
+          var contributorRoleDefinitionId = resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+          var deploymentScriptName = 'CopyConfigScript'
+
+          resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+            name: storageAccountName
+            tags: {
+              displayName: storageAccountName
+            }
+            location: resourceGroup().location
+            kind: 'StorageV2'
+            sku: {
+              name: 'Standard_LRS'
+              tier: 'Standard'
+            }
+            properties: {
+              allowBlobPublicAccess: true
+              encryption: {
+                services: {
+                  blob: {
+                    enabled: true
+                  }
+                }
+                keySource: 'Microsoft.Storage'
+              }
+              supportsHttpsTrafficOnly: true
+            }
+
+            resource blobService 'blobServices' existing = {
+              name: 'default'
+            }
+          }
+
+          resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2019-04-01' = {
+            parent: storageAccount::blobService
+            name: storageBlobContainerName
+            properties: {
+              publicAccess: 'Blob'
+            }
+          }
+
+          resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
+            name: userAssignedIdentityName
+            location: resourceGroup().location
+          }
+
+          resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+            name: roleAssignmentName
+            properties: {
+              roleDefinitionId: contributorRoleDefinitionId
+              principalId: userAssignedIdentity.properties.principalId
+              principalType: 'ServicePrincipal'
+            }
+          }
+
+          resource deploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+            name: deploymentScriptName
+            location: resourceGroup().location
+            kind: 'AzurePowerShell'
+            identity: {
+              type: 'UserAssigned'
+              userAssignedIdentities: {
+                '${userAssignedIdentity.id}': {}
+              }
+            }
+            properties: {
+              azPowerShellVersion: '3.0'
+              scriptContent: '''
+                Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/Azure/azure-docs-json-samples/master/mslearn-arm-deploymentscripts-sample/appsettings.json' -OutFile 'appsettings.json'
+                $storageAccount = Get-AzStorageAccount -ResourceGroupName 'learndeploymentscript_exercise_1' | Where-Object { $_.StorageAccountName -like 'storage*' }
+                $blob = Set-AzStorageBlobContent -File 'appsettings.json' -Container 'config' -Blob 'appsettings.json' -Context $storageAccount.Context
+                $DeploymentScriptOutputs = @{}
+                $DeploymentScriptOutputs['Uri'] = $blob.ICloudBlob.Uri
+                $DeploymentScriptOutputs['StorageUri'] = $blob.ICloudBlob.StorageUri
+              '''
+              retentionInterval: 'P1D'
+            }
+            dependsOn: [
+              roleAssignment
+              blobContainer
+            ]
+          }
+
+          output fileUri string = deploymentScript.properties.outputs.Uri
+          ```
+
+    2. Update the PowerShell script
+        - Because the other team has done the hard work in creating a PowerShell script to copy multiple files, you decide to use that script in your template.
+
+        - Edit **scriptContent** in the **properties** section to include the script that your partner team has provided.
+          ```PS1
+          param([string]$File)
+          $fileList = $File -replace '(\[|\])' -split ',' | ForEach-Object { $_.trim() }
+          $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:ResourceGroupName -Name $env:StorageAccountName -Verbose
+          $count = 0
+          $DeploymentScriptOutputs = @{}
+          foreach ($fileName in $fileList) {
+              Write-Host "Copying $fileName to $env:StorageContainerName in $env:StorageAccountName."
+              Invoke-RestMethod -Uri "https://raw.githubusercontent.com/Azure/azure-docs-json-samples/master/mslearn-arm-deploymentscripts-sample/$fileName" -OutFile $fileName
+              $blob = Set-AzStorageBlobContent -File $fileName -Container $env:StorageContainerName -Blob $fileName -Context $storageAccount.Context
+              $DeploymentScriptOutputs[$fileName] = @{}
+              $DeploymentScriptOutputs[$fileName]['Uri'] = $blob.ICloudBlob.Uri
+              $DeploymentScriptOutputs[$fileName]['StorageUri'] = $blob.ICloudBlob.StorageUri
+              $count++
+          }
+          Write-Host "Finished copying $count files."
+          ```
+
+    3. Add an environment variable
+        - The script you've adopted requires some environment variables.
+          + You can specify them directly in the template, but it'll be more flexible to use Bicep variables to get some of the values.
+
+        ```Bicep
+        environmentVariables: [
+          {
+            name: 'ResourceGroupName'
+            value: resourceGroup().name
+          }
+          {
+            name: 'StorageAccountName'
+            value: storageAccountName
+          }
+          {
+            name: 'StorageContainerName'
+            value: storageBlobContainerName
+          }
+        ]
+        ```
+
+    4. Add a template parameter
+        - To make your template easier for the two teams to use, you can add a parameter to the template so that each team can specify the files that it wants to copy.
+
+        ```Bicep
+        @description('List of files to copy to application storage account.')
+        param filesToCopy array
+        ```
+
+        - As a bonus, you can supply a default value so the template will continue to work for your team with no changes to the deployment process.
+          + Although not required, entering a new default value can help you understand the pattern of making it easier for teams to adopt new versions of templates if they continue to behave as they've previously done, with the new functionality being the reward. 
+          + In other words, this step shows you how to maintain the existing behavior while making the changes to support future work.
+
+    5. Add an argument to pass in the files to copy
+        - Next, you can take the parameter that you just defined and pass it in to the deployment script.
+          + Passing command-line arguments can be tricky, because the strings are evaluated at multiple levels.
+          + Properly escaping quotes and picking the right quotes for the job are essential for success.
+
+        - Add an **arguments** property to the deployment script.
+          + The PowerShell script takes a parameter named **File**, which is a string of filenames that should come from the **filesToCopy** template parameter.
+
+          ```bicep
+          arguments: '-File \'${string(filesToCopy)}\''
+          ```
+          
+          + String interpolation, to combine the strings.
+          + We use the __\__ escape character to allow us to include a single quote character (**'**) inside the string, because a single quote is normally a reserved character in Bicep.
+          + We use the **string()** function to convert the **filesToCopy** array to a string.
+
+    6. Update the template output
+        - Because you're changing the deployment script to deploy one or more files, you need to update the template output to provide all the necessary information.
+          ```bicep
+          output fileUri object = deploymentScript.properties.outputs
+          output storageAccountName string = storageAccountName
+          ```
+
+    7. Verify your template
+        1. **main.bicep** file:
+            ```bicep
+            @description('List of files to copy to application storage account.')
+            param filesToCopy array = [
+              'appsettings.json'
+            ]
+
+            var storageAccountName = 'storage${uniqueString(resourceGroup().id)}'
+            var storageBlobContainerName = 'config'
+            var userAssignedIdentityName = 'configDeployer'
+            var roleAssignmentName = guid(resourceGroup().id, 'contributor')
+            var contributorRoleDefinitionId = resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+            var deploymentScriptName = 'CopyConfigScript'
+
+            resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+              name: storageAccountName
+              tags: {
+                displayName: storageAccountName
+              }
+              location: resourceGroup().location
+              kind: 'StorageV2'
+              sku: {
+                name: 'Standard_LRS'
+                tier: 'Standard'
+              }
+              properties: {
+                allowBlobPublicAccess: true
+                encryption: {
+                  services: {
+                    blob: {
+                      enabled: true
+                    }
+                  }
+                  keySource: 'Microsoft.Storage'
+                }
+                supportsHttpsTrafficOnly: true
+              }
+
+              resource blobService 'blobServices' existing = {
+                name: 'default'
+              }
+            }
+
+            resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2019-04-01' = {
+              parent: storageAccount::blobService
+              name: storageBlobContainerName
+              properties: {
+                publicAccess: 'Blob'
+              }
+            }
+
+            resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
+              name: userAssignedIdentityName
+              location: resourceGroup().location
+            }
+
+            resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+              name: roleAssignmentName
+              properties: {
+                roleDefinitionId: contributorRoleDefinitionId
+                principalId: userAssignedIdentity.properties.principalId
+                principalType: 'ServicePrincipal'
+              }
+            }
+
+            resource deploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+              name: deploymentScriptName
+              location: resourceGroup().location
+              kind: 'AzurePowerShell'
+              identity: {
+                type: 'UserAssigned'
+                userAssignedIdentities: {
+                  '${userAssignedIdentity.id}': {}
+                }
+              }
+              properties: {
+                arguments: '-File \'${string(filesToCopy)}\''
+                environmentVariables: [
+                  {
+                    name: 'ResourceGroupName'
+                    value: resourceGroup().name
+                  }
+                  {
+                    name: 'StorageAccountName'
+                    value: storageAccountName
+                  }
+                  {
+                    name: 'StorageContainerName'
+                    value: storageBlobContainerName
+                  }
+                ]
+                azPowerShellVersion: '3.0'
+                scriptContent: '''
+                  param([string]$File)
+                  $fileList = $File -replace '(\[|\])' -split ',' | ForEach-Object { $_.trim() }
+                  $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:ResourceGroupName -Name $env:StorageAccountName -Verbose
+                  $count = 0
+                  $DeploymentScriptOutputs = @{}
+                  foreach ($fileName in $fileList) {
+                      Write-Host "Copying $fileName to $env:StorageContainerName in $env:StorageAccountName."
+                      Invoke-RestMethod -Uri "https://raw.githubusercontent.com/Azure/azure-docs-json-samples/master/mslearn-arm-deploymentscripts-sample/$fileName" -OutFile $fileName
+                      $blob = Set-AzStorageBlobContent -File $fileName -Container $env:StorageContainerName -Blob $fileName -Context $storageAccount.Context
+                      $DeploymentScriptOutputs[$fileName] = @{}
+                      $DeploymentScriptOutputs[$fileName]['Uri'] = $blob.ICloudBlob.Uri
+                      $DeploymentScriptOutputs[$fileName]['StorageUri'] = $blob.ICloudBlob.StorageUri
+                      $count++
+                  }
+                  Write-Host "Finished copying $count files."
+                '''
+                retentionInterval: 'P1D'
+              }
+              dependsOn: [
+                roleAssignment
+                blobContainer
+              ]
+            }
+
+            output fileUri object = deploymentScript.properties.outputs
+            output storageAccountName string = storageAccountName
+            ```
+
+        2. Create a parameters file
+            - Now that you've got the template set, you can validate the new deployment script by using a parameters file with new files specified.
+
+            - **azuredeploy.parameters.json** file:
+              ```JSON
+              {
+                "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+                "contentVersion": "1.0.0.0",
+                "parameters": {
+                    "filesToCopy": {
+                        "value": [
+                            "swagger.Staging.json",
+                            "appsettings.Staging.json"
+                        ]
+                    }
+                }
+              }
+            ```
+
+    8. Deploy the template
+        1. Create a resource group for the exercise
+            ```azure Cli
+            resourceGroupName="learndeploymentscript_exercise_2"
+            az group create --location eastus --name $resourceGroupName
+            ```
+
+        2. Deploy the template to Azure
+            ```Azure CLI
+            templateFile="main.bicep"
+            templateParameterFile="azuredeploy.parameters.json"
+            today=$(date +"%d-%b-%Y")
+            deploymentName="deploymentscript-"$today
+
+            az deployment group create --resource-group $resourceGroupName --name $deploymentName --template-file $templateFile --parameters $templateParameterFile
+            ```
+
+        3. Review the result of your template
+            1. List the contents of blob storage:
+              ```Azure cli
+              storageAccountName=$(az deployment group show --resource-group $resourceGroupName --name $deploymentName --query 'properties.outputs.storageAccountName.value' --output tsv)
+              az storage blob list --account-name $storageAccountName --container-name config --query '[].name'
+              ```
+
+              ```output
+              [
+                "swagger.Staging.json",
+                "appsettings.Staging.json"
+              ]
+              ```
+
+            2. You can also review the logs (and other details about the deployment) from the Azure portal or by using the following command.
+                ```
+                az deployment-scripts show-log --resource-group $resourceGroupName --name CopyConfigScript
+                ```
+
+    10. Clean up the resource group
+        ```Azure CLI
+        az group delete --name $resourceGroupName
+        ```
+
+6. Summary
+
+7. Learn more
+    - To learn more about deployment scripts, check out these articles:
+      + deploymentScripts in the Azure Resource Manager template reference
+        - https://learn.microsoft.com/en-us/azure/templates/microsoft.resources/deploymentscripts
+      + Use deployment scripts in templates
+        - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/deployment-script-template
+      + Tutorial: Use deployment scripts to create a self-signed certificate
+        - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/template-tutorial-deployment-script
+
+## Extend Bicep and ARM templates using deployment scripts
+
+## Publish libraries of reusable infrastructure code by using template specs
+
+## Share Bicep modules by using private registries
+
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
 
