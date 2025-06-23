@@ -8192,11 +8192,730 @@
       + Tutorial: Use deployment scripts to create a self-signed certificate
         - https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/template-tutorial-deployment-script
 
-## Extend Bicep and ARM templates using deployment scripts
-
 ## Publish libraries of reusable infrastructure code by using template specs
+- https://learn.microsoft.com/en-us/training/modules/arm-template-specs/
+
+- Reuse and share your ARM templates across your organization.
+  + Publish template specs that deploy resources preconfigured for your organization's requirements.
+  + Control access and safely update template specs by using versions.
+
+1. Introduction
+    1. Introduction
+        - Template specs provide a way to create and manage reusable Azure Resource Manager templates (ARM templates). 
+        - After you write and test your ARM templates, you can use template specs to share them throughout your organization.
+        - By building a library of template specs, you can ensure that Azure resources are configured the way you intended when they're deployed.
+
+    2. Example scenario
+        - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company. 
+          + Your Azure environment is maturing. 
+          + Lots of people from lots of teams come to you to provision and configure new Azure infrastructure for them to use.
+
+        - Everyone trusts you to provision the infrastructure correctly and in a way that follows your company's policies. 
+          + It's great that they trust you so much, but this means you're spending all your time deploying templates.
+          + And your company's use of Azure is growing, so your workload is going to keep increasing.
+
+        - You built a comprehensive set of templates that you use to deploy your company's Azure infrastructure.
+          + Each template configures its resources to follow your company's guidelines.
+          + At the moment, your templates are all stored on your own computer, and you email them to colleagues who need them.
+          + You feel like there must be a way to share these templates with your organization so you can get back to other things.
+
+2. Understand template specs
+    - By now, you're used to deploying Azure Resource Manager templates (ARM templates) to Azure by using Bicep or JSON.
+      + You create a template file, and then you submit it to Azure by creating a deployment.
+      + Azure Resource Manager orchestrates the creation or reconfiguration of your resources.
+
+    - When you work with template specs, you still send the template to Azure.
+      + But instead of deploying it, Azure saves it for you to use in the future.
+      + Then, you can go back later and tell Azure to deploy the template spec.
+      + You can even use the same template spec repeatedly to deploy more environments.
+
+    1. Why use template specs?
+        - At your toy company, you created lots of reusable templates, including:
+          ```
+          Template name	            Description
+          Storage account	          Deploys a storage account and enforces Microsoft Entra authentication.
+          Cosmos DB account	        Deploys an Azure Cosmos DB account with continuous backup enabled.
+          Virtual network	          Deploys a virtual network that has the right configuration to peer with the main hub network.
+          Product launch website	  Deploys an Azure App Service plan, app, and storage account for websites that feature product launches of new toys.
+          ```
+
+    2. How do template specs compare to Bicep modules?
+        - When you work with Bicep, you can create reusable modules to define sets of resources in a single file.
+        - Template specs and Bicep modules are both ways of adding reusability to your templates, but they're optimized for different things:
+          + 1. Template specs are designed to be deployable as a complete template.
+          + 2. Template specs provide versioning and access control capabilities.
+          + 3. Template specs are stored in Azure as a resource.
+          + 4. Bicep modules retain all of the original Bicep code, including comments, symbolic names, and whitespace.
+
+        - When you're deciding between template specs and Bicep modules, a good rule of thumb is:
+          + if the template is going to be deployed as is throughout your organization, template specs are probably a good fit.
+          + But if you're likely to reuse this template within multiple parent templates, Bicep modules might serve your needs better.
+
+    3. How template specs work
+        - A template spec is an Azure resource, just like a storage account or virtual machine. 
+          + It must be created within a resource group, although the template itself can deploy resources to a subscription, management, or tenant scope.
+
+        - When you work with template specs, you create two resources:
+          + The **template spec** is the container resource. It contains one or multiple versions.
+          + **Template spec versions** contain the actual template to deploy.
+
+        - You work with template specs and versions by using their resource IDs.
+          + Here's an example resource ID for a template spec:
+            ```
+            /subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/SharedTemplates/providers/Microsoft.Resources/templateSpecs/StorageWithoutSAS
+            ```
+
+          + A version is a child resource of the template spec. It has a resource ID like this example:
+            ```
+            /subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/SharedTemplates/providers/Microsoft.Resources/templateSpecs/StorageWithoutSAS/versions/1.0
+            ```
+
+3. Create and publish a template spec
+    1. Create a template
+        - To create a template for use as a template spec, you write an Azure Resource Manager template (ARM template) just like you normally do.
+          + You can include parameters, variables, resources, and outputs.
+
+        - It's important that your template is easy for anyone in your organization to understand and use, especially the parameters.
+          + Make sure you use clear and understandable parameter names.
+          + Use parameter decorators to provide information about the values that you expect your parameters to include, 
+          + like in this example:
+            ```BICEP
+            @description('The type of the environment to deploy. This will determine the SKUs and cost of the resources.')
+            @allowed([
+              'Production'
+              'NonProduction'
+            ])
+            param environmentType string
+
+            @secure()
+            @description('The secret key to use.')
+            param key string
+
+            @description('The Azure region into which the resources should be deployed.')
+            param location string
+
+            @description('The number of Azure SQL logical servers to create.')
+            @maxValue(5)
+            param sqlServerCount int
+            ```
+    
+    2. Publish the template spec to Azure
+        - To create a template spec, use the **az ts create** command
+          ```Azure cli
+          az ts create --name StorageWithoutSAS --location westus --display-name "Storage account with SAS disabled" --description "This template spec creates a storage account, which is preconfigured to disable SAS authentication." --version 1.0 --template-file main.bicep
+          ```
+          + **--name** is the resource name of the template spec, which can't include spaces.
+          + **--location** is the location in which the template spec metadata should be created. You can deploy the template spec into any region though.
+          + **--display-name** is a human-readable name, which can include spaces.
+          + **--description** is a human-readable description, which you can use to provide detail about the contents of the template spec and when someone might use it.
+          + **--version** is the version of the template spec. You learn about versions later in this module.
+          + **--template-file** is the path to the ARM template to create the template spec for.
+
+4. Deploy a template spec
+    1. Create a deployment by using a template spec
+        - To deploy a template spec to a resource group, you use the same **az deployment group create** command
+          ```
+          az deployment group create --template-spec "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/SharedTemplates/providers/Microsoft.Resources/templateSpecs/StorageWithoutSAS"
+          ```
+
+        - you can deploy them to subscriptions, management groups, or even tenants by using these commands:
+          ```
+          az deployment group create
+          az deployment sub create
+          az deployment mg create
+          az deployment tenant create
+          ```
+
+    2. Use a template spec as a Bicep module
+        ```Bicep
+        module storageAccountTemplateSpec 'ts:f0750bbe-ea75-4ae5-b24d-a92ca601da2c/sharedTemplates/StorageWithoutSAS:1.0' = {
+          name: 'storageAccountTemplateSpec'
+        }
+        ```
+          + **Scheme**: Bicep supports several types of module, which are called schemes.
+            - When you use a template spec as a module, you use **ts** as the scheme.
+          + **Subscription ID**, **resource group name**, and **template spec name**: These values should specify the location of the template spec resource that you previously published. 
+            - You use forward slashes (**/**) to separate the subscription ID, resource group name, and template spec name. 
+            - This section of the module path isn't the full resource ID of the template spec - it's just a few of the components of the resource ID.
+          + **Version**: The template spec version needs to be included.
+
+        - NOTE: You can't use variables, parameters, or string interpolation when you specify the path to a module.
+          + The full template spec path needs to be saved into your Bicep file.
+
+        - When you have parameters to provide to the template spec, you use the **params** property:
+          ```bicep
+          module storageAccountTemplateSpec 'ts:f0750bbe-ea75-4ae5-b24d-a92ca601da2c/sharedTemplates/StorageWithoutSAS:1.0' = {
+            name: 'storageAccountTemplateSpec'
+            params: {
+              storageAccountName: storageAccountName
+            }
+          }
+          ```
+
+        - The template spec file is downloaded and copied (**transpiled**) into your JSON ARM template when the Bicep file is built. 
+          + Normally this operation happens when you deploy your Bicep file, but you can also use the Bicep tooling to transpile explicitly by running the **bicep build** command.
+
+5. Exercise - Create and deploy a template spec
+    1. Create the template
+        - **main.bicep** file:
+          ```bicep
+          param location string = resourceGroup().location
+          param cosmosDBAccountName string = 'toy-${uniqueString(resourceGroup().id)}'
+
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2021-04-15' = {
+            name: cosmosDBAccountName
+            kind: 'GlobalDocumentDB'
+            location: location
+            properties: {
+              consistencyPolicy: {
+                defaultConsistencyLevel: 'Session'
+              }
+              locations: [
+                {
+                  locationName: location
+                  failoverPriority: 0
+                  isZoneRedundant: false
+                }
+              ]
+              databaseAccountOfferType: 'Standard'
+              enableAutomaticFailover: false
+              enableMultipleWriteLocations: false
+              backupPolicy: {
+                type: 'Continuous'
+              }
+            }
+          }
+          ```
+
+    2. Make the parameters easier to understand
+        ```Bicep
+        @description('The Azure region into which the Cosmos DB resources should be deployed.')
+        param location string = resourceGroup().location
+
+        @description('The name of the Cosmos DB account. This name must be globally unique, and it must only include lowercase letters, numbers, and hyphens.')
+        @minLength(3)
+        @maxLength(44)
+        param cosmosDBAccountName string = 'toy-${uniqueString(resourceGroup().id)}'
+        ```
+
+    3. Sign in to Azure
+        - set defaut resource group
+
+    4. Publish the template as a template spec
+        ```
+        az ts create --name ToyCosmosDBAccount --location westus --display-name "Cosmos DB account" --description "This template spec creates a Cosmos DB account that meets our company's requirements." --version 1.0 --template-file main.bicep
+        ```
+
+    5. Use the Azure portal to verify the template spec
+        - Open template spec resource on resource group
+
+    6. Deploy the template spec
+        ```azure cli
+        id=$(az ts show --name ToyCosmosDBAccount --resource-group "[sandbox resource group name]" --version "1.0" --query "id")
+
+        az deployment group create --template-spec $id
+        ```
+
+    7. Verify your deployment
+        - Go to Resource Group, then *deployments* section
+
+6. Manage a template spec
+    1. Add versions
+        1. Versioning schemes
+            - Common versioning schemes include: 
+              + 1. Basic integers
+              + 2. Dates: **yyyy-mm-dd** format
+              + 3. Semantic versioning
+
+        2. Versioning policies
+            - Here's a versioning policy that often works well:
+              + 1. Whenever you make significant changes to a template spec, create a new version
+              + 2. Whenever you make small changes to a template spec, which are sometimes called a **hotfix**, update the existing template spec version.
+              + 3. Delete old versions when they're no longer relevant or when you don't want anyone to use them.
+
+        3. Version descriptions
+
+    2. Making changes to a template spec
+        - Template specs are Azure resources, so you can manage them like any other resource.
+          + This means you can view the details of a template spec, update it, and delete it, just like normal.
+
+        ```
+        az ts show --resource-group MyResourceGroup --name MyTemplateSpec -version 1.0
+
+        az ts update --resource-group MyResourceGroup --name MyTemplateSpec --version 1.0 --template-file azuredeploy.json
+
+        az ts delete --resource-group MyResourceGroup --name MyTemplateSpec --version 1.0
+        ```
+
+        - NOTE: When you publish a Bicep file to a template spec, it's converted to JSON. 
+          + You can't see the original Bicep file, so it's a good idea to keep that somewhere else.
+
+
+      3. Export a template spec
+          ```
+          az ts export --resource-group MyResourceGroup --name MyTemplateSpec --version 1.0 --output-folder ./mytemplate
+          ```
+
+      4. Control access to a template spec
+          - Because template specs are Azure resources, they use Azure's identity and access management (IAM).
+            + When a user deploys a template spec, Azure checks that the user has access to read the template spec first.
+
+
+7. Exercise - Update and version a template spec
+    1. Update the template
+        - *main.bicep* file:
+          ```bicep
+          @description('The Azure region into which the Cosmos DB resources should be deployed.')
+          param location string = resourceGroup().location
+
+          @description('The name of the Cosmos DB account. This name must be globally unique, and it must only include lowercase letters, numbers, and hyphens.')
+          @minLength(3)
+          @maxLength(44)
+          param cosmosDBAccountName string = 'toy-${uniqueString(resourceGroup().id)}'
+
+          @description('A descriptive name for the role definition.')
+          param roleDefinitionFriendlyName string = 'Read and Write'
+
+          @description('The list of actions that the role definition permits.')
+          param roleDefinitionDataActions array = [
+            'Microsoft.DocumentDB/databaseAccounts/readMetadata'
+            'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/*'
+          ]
+
+          @description('The object ID of the Azure AD principal that should be granted access using the role definition.')
+          param roleAssignmentPrincipalId string
+
+          var roleDefinitionName = guid('sql-role-definition', cosmosDBAccount.id)
+          var roleAssignmentName = guid('sql-role-assignment', cosmosDBAccount.id)
+
+          resource cosmosDBAccount 'Microsoft.DocumentDB/databaseAccounts@2021-04-15' = {
+            name: cosmosDBAccountName
+            kind: 'GlobalDocumentDB'
+            location: location
+            properties: {
+              consistencyPolicy: {
+                defaultConsistencyLevel: 'Session'
+              }
+              locations: [
+                {
+                  locationName: location
+                  failoverPriority: 0
+                  isZoneRedundant: false
+                }
+              ]
+              databaseAccountOfferType: 'Standard'
+              enableAutomaticFailover: false
+              enableMultipleWriteLocations: false
+            }
+          }
+
+          resource roleDefinition 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions@2021-04-15' = {
+            parent: cosmosDBAccount
+            name: roleDefinitionName
+            properties: {
+              roleName: roleDefinitionFriendlyName
+              type: 'CustomRole'
+              assignableScopes: [
+                cosmosDBAccount.id
+              ]
+              permissions: [
+                {
+                  dataActions: roleDefinitionDataActions
+                }
+              ]
+            }
+          }
+
+          resource roleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2021-04-15' = {
+            parent: cosmosDBAccount
+            name: roleAssignmentName
+            properties: {
+              roleDefinitionId: roleDefinition.id
+              principalId: roleAssignmentPrincipalId
+              scope: cosmosDBAccount.id
+            }
+          }
+          ```
+
+    2. Publish a new version of the template spec
+        ```
+        az ts create --name ToyCosmosDBAccount --version 2.0 --version-description "Adds Cosmos DB role-based access control." --template-file main.bicep
+        ```
+
+    3. Verify the template spec
+    4. Deploy the new template spec version
+        ```
+        id=$(az ts show --name ToyCosmosDBAccount --resource-group "[sandbox resource group name]" --version "2.0" --query "id")
+
+        az deployment group create --template-spec $id --parameters roleAssignmentPrincipalId="d68d19b3-d7ef-4ae9-9ee4-90695a4e417d"
+        ```
+
+    5. Verify the deployment
+
+8. Summary
+9. Referrences
+- Azure Resource Manager template specs: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/template-specs
+- Create a template spec with linked templates
+  + https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/template-specs-create-linked
+- Deploy a template spec as a linked template
+  + https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/template-specs-deploy-linked-template
 
 ## Share Bicep modules by using private registries
+- https://learn.microsoft.com/en-us/training/modules/share-bicep-modules-using-private-registries/
+
+- Reuse Bicep modules to reduce code duplication and increase the quality of your deployments.
+  + Create a private registry for your organization.
+  + Publish shared modules to the registry, and consume them in multiple deployments.
+
+1. Introduction
+    - When you work with Bicep code in your own organization, you often create reusable modules that benefit your colleagues.
+      + These modules can create resources in a way that fits your organization's requirements.
+    - For example, the modules can use your defined naming conventions and configure your resources so that they meet your security requirements.
+    - Private Bicep registries provide an easy way for you to share these modules within your organization.
+
+1. Example scenario
+    - Suppose you're responsible for deploying and configuring the Azure infrastructure at a toy company.
+      + You've previously worked with one of your toy product development teams to create a set of Bicep modules.
+      + You created a module to deploy a website, and another module to deploy a content delivery network (CDN).
+
+    - Now, members of another team have asked you if they can reuse the same modules for their own deployments.
+      + They're building a new toy dog, and they need to deploy a website and CDN to help promote the product on social media.
+
+    - You considered sending the modules to each team by email, but you're worried about how to control access and manage different versions. 
+      + You want to find a way to share the modules throughout your organization, to make it easier for any team to reuse them for future deployments.
+
+2. Understand module registries
+    1. Why do you share Bicep modules?
+        -  Bicep registry is the place where modules are stored and shared.
+          + Anyone can create their own registry.
+          + In the future, Microsoft plans to support publishing more types of Bicep content to registries, in addition to modules.
+
+        - TIP: Microsoft maintains a public Bicep module registry.
+          + The public registry contains modules that anybody in the community can use. 
+          + Over time, the public registry will contain modules to help to achieve some common scenarios in Bicep.
+
+    2. How do registries compare to template specs?
+        - 1. Bicep modules are intended to be combined into a larger deployment.
+        - 2. Template specs are stored in Azure as resources.
+        - 3. Template specs provide access control capabilities.
+
+    3. Private registries
+        - Bicep registries are built on a technology called **container registries**.
+        - Currently, Bicep supports Azure Container Registry.
+          + In the future, Microsoft plans to support other registries, such as Docker Hub.
+
+        - Azure Container Registry provides multiple service tiers, with different capabilities and limits.
+          + When you provision your own registry, you'll need to select the tier that suits your requirements
+
+        - TIP: In Azure Container Registry, a module is called a *repository*.
+          + Don't confuse this with a Git repository. The terms are the same, but the meaning is different.
+
+    4. Access control
+        - Because Azure Container Registry provides a private registry for your organization, you can control who has access to it.
+          + Azure Container Registry provides several options for managing access, including Microsoft Entra ID and keys that you issue to individual users.
+
+        - Bicep automatically detects the Microsoft Entra identity that you use in the Azure CLI or Azure PowerShell, so you don't need to sign in again.
+          + When you use a Bicep module registry from a pipeline, you use a special type of identity called a **service principal**.
+
+        - You can separately control who has permission to write modules to your registry and who has permission to read modules.
+
+3. Exercise - Create a registry
+    1. Prerequisites
+        ```
+        cd templates
+
+        az bicep install && az bicep upgrade
+        az login
+
+        az account list --refresh --query "[?contains(name, 'Concierge Subscription')].id" --output table
+        az account set --subscription {your subscription ID}
+        ```
+
+    2. Create a container registry
+        ```
+        az acr create --name YOUR_CONTAINER_REGISTRY_NAME --sku Basic --location westus
+        ```
+
+    3. List the modules in your registry
+        ```
+        az acr repository list --name YOUR_CONTAINER_REGISTRY_NAME
+        ```
+
+4. Publish a module to a private registry
+    1. Module paths
+        - Here's an example path for a module in a private Azure container registry:
+          ```
+          br:toycompany.azurecr.io/mymodules/modulename:moduleversion
+          ```
+          + **Scheme**: Bicep supports several module types, which are called schemes. When you work with Bicep registries, the scheme is **br**.
+          + **Registry**: The name of the registry that contains the module you want to use. In the preceding example, the registry name is **toycompany.azurecr.io**, which is the name of the container registry.
+          + **Module identifier**: The full path to the module within the registry.
+          + **Tag**: Tags typically represent versions of modules, because a single module can have multiple versions published.
+           
+    2. Tags and versions
+        1. Versioning schemes: Basic integers, Dates (yyyy-mm-ddd format), or Semantic versioning
+        2. Versioning policies
+
+    3. Publish your module
+        ```
+        az bicep publish --file module.bicep --target 'br:toycompany.azurecr.io/mymodules/modulename:moduleversion'
+        ```
+        - These steps include:
+          + Checking that your code doesn't have any syntactical errors.
+          + Verifying that you're specifying valid resource definitions.
+          + Running the Bicep linter to verify that your code passes a series of quality checks.
+
+        - If the validation steps pass, the module is published to your registry.
+
+5. Exercise - Publish a module to your registry
+    1. Create a module for a website
+        - **website.bicep** file
+          ```bicep
+          @description('The Azure region into which the resources should be deployed.')
+          param location string
+
+          @description('The name of the App Service app.')
+          param appServiceAppName string
+
+          @description('The name of the App Service plan.')
+          param appServicePlanName string
+
+          @description('The name of the App Service plan SKU.')
+          param appServicePlanSkuName string
+
+          resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+            name: appServicePlanName
+            location: location
+            sku: {
+              name: appServicePlanSkuName
+            }
+          }
+
+          resource appServiceApp 'Microsoft.Web/sites@2023-12-01' = {
+            name: appServiceAppName
+            location: location
+            properties: {
+              serverFarmId: appServicePlan.id
+              httpsOnly: true
+            }
+          }
+
+          @description('The default host name of the App Service app.')
+          output appServiceAppHostName string = appServiceApp.properties.defaultHostName
+          ```
+
+    2. Create a module for a CDN
+        - **cdn.bicep** file:
+          ```bicep
+          @description('The host name (address) of the origin server.')
+          param originHostName string
+
+          @description('The name of the CDN profile.')
+          param profileName string = 'cdn-${uniqueString(resourceGroup().id)}'
+
+          @description('The name of the CDN endpoint')
+          param endpointName string = 'endpoint-${uniqueString(resourceGroup().id)}'
+
+          @description('Indicates whether the CDN endpoint requires HTTPS connections.')
+          param httpsOnly bool
+
+          var originName = 'my-origin'
+
+          resource cdnProfile 'Microsoft.Cdn/profiles@2024-02-01' = {
+            name: profileName
+            location: 'global'
+            sku: {
+              name: 'Standard_Microsoft'
+            }
+          }
+
+          resource endpoint 'Microsoft.Cdn/profiles/endpoints@2024-02-01' = {
+            parent: cdnProfile
+            name: endpointName
+            location: 'global'
+            properties: {
+              originHostHeader: originHostName
+              isHttpAllowed: !httpsOnly
+              isHttpsAllowed: true
+              queryStringCachingBehavior: 'IgnoreQueryString'
+              contentTypesToCompress: [
+                'text/plain'
+                'text/html'
+                'text/css'
+                'application/x-javascript'
+                'text/javascript'
+              ]
+              isCompressionEnabled: true
+              origins: [
+                {
+                  name: originName
+                  properties: {
+                    hostName: originHostName
+                  }
+                }
+              ]
+            }
+          }
+
+          @description('The host name of the CDN endpoint.')
+          output endpointHostName string = endpoint.properties.hostName
+          ```
+
+    3. Publish the modules to your registry
+        ```
+        az bicep publish --file website.bicep --target 'br:YOUR_CONTAINER_REGISTRY_NAME.azurecr.io/website:v1'
+
+        az bicep publish --file cdn.bicep --target 'br:YOUR_CONTAINER_REGISTRY_NAME.azurecr.io/cdn:v1'
+        ```
+
+        - verify by command or portal:
+          ```
+          az acr repository list --name YOUR_CONTAINER_REGISTRY_NAME
+          ```
+
+          ```output
+          [
+            "cdn",
+            "website"
+          ]
+          ```
+
+6. Use a module from a private registry
+    1. Use a Bicep module
+        ```bicep
+        module myModule 'br:myregistry.azurecr.io/modulepath/modulename:moduleversion' = {
+          name: 'my-module'
+          params: {
+            moduleParameter1: 'value'
+          }
+        }
+        ```
+
+    2. Aliases
+        - To define an alias, you need to create a **bicepconfig.json** file in the same folder as your Bicep file
+          ```JSON
+          {
+            "moduleAliases": {
+              "br": {
+                "MyRegistry": {
+                  "registry": "myregistry.azurecr.io"
+                }
+              }
+            }
+          }
+          ```
+
+          ```bicep
+          module myModule 'br/MyRegistry:bicep/my-module:v1' = {
+          }
+          ```
+            + NOTICE: Notice that the beginning of the path is **br/** when you use an alias and **br:** when you don't.
+
+    3. Build your Bicep file
+        - **bicep restore** command
+        - **bicep build** command with the **--no-restore** command-line
+
+7. Exercise - Use modules from your registry
+    1. Create a Bicep file
+        - *main.bicep* file
+
+    2. Add the modules to the Bicep file
+
+    3. Build and inspect your Bicep file
+        ```
+        az bicep build --file main.bicep
+        ```
+        - Bicep creates a file named **main.json** in the same folder as the **main.bicep** file.
+
+    4. Create a registry alias
+        - create **bicepconfig.json** file
+          ```
+          {
+            "moduleAliases": {
+              "br": {
+                "ToyCompanyRegistry": {
+                  "registry": "YOUR_CONTAINER_REGISTRY_NAME.azurecr.io"
+                }
+              }
+            }
+          }
+          ```
+
+    5. Use the registry alias
+        - **main.bicep**
+          ```
+          // NEW
+          module website 'br/ToyCompanyRegistry:website:v1' = {
+            name: 'toy-dog-website'
+            params: {
+              appServiceAppName: appServiceAppName
+              appServicePlanName: appServicePlanName
+              appServicePlanSkuName: appServicePlanSkuName
+              location: location
+            }
+          }
+
+          module cdn 'br/ToyCompanyRegistry:cdn:v1' = {
+            name: 'toy-dog-cdn'
+            params: {
+              httpsOnly: true
+              originHostName: website.outputs.appServiceAppHostName
+            }
+          }
+          ```
+          + NOTICE: Be sure to change the beginning of the module path from **br:** to **br/**.
+            + Also, after ToyCompanyRegistry, change the slash (**/**) character to a colon (**:**).
+
+    6. Verify your Bicep file
+        - **main.bicep** file:
+            ```bicep
+            @description('The Azure region into which the resources should be deployed.')
+            param location string = 'westus3'
+
+            @description('The name of the App Service app.')
+            param appServiceAppName string = 'toy-${uniqueString(resourceGroup().id)}'
+
+            @description('The name of the App Service plan SKU.')
+            param appServicePlanSkuName string = 'F1'
+
+            var appServicePlanName = 'toy-dog-plan'
+
+            module website 'br/ToyCompanyRegistry:website:v1' = {
+              name: 'toy-dog-website'
+              params: {
+                appServiceAppName: appServiceAppName
+                appServicePlanName: appServicePlanName
+                appServicePlanSkuName: appServicePlanSkuName
+                location: location
+              }
+            }
+
+            module cdn 'br/ToyCompanyRegistry:cdn:v1' = {
+              name: 'toy-dog-cdn'
+              params: {
+                httpsOnly: true
+                originHostName: website.outputs.appServiceAppHostName
+              }
+            }
+            ```
+
+    7. Deploy to Azure
+        ```
+        az deployment group create --template-file main.bicep
+        ```
+
+        1. Verify the deployment
+
+8. Summary
+9. Related links
+    - Private registries: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/private-module-registry
+      + Azure Container Registry: https://azure.microsoft.com/services/container-registry/#overview
+      + Azure Container Registry service tiers: https://learn.microsoft.com/en-us/azure/container-registry/container-registry-skus
+      + Authenticate with an Azure container registry
+        - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication
+    - Registry aliases: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/bicep-config-modules#aliases-for-modules
+    - Public module registry
+      + https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/modules#public-module-registry
 
 # Option 1: Deploy Azure resources by using Bicep and Azure Pipelines
 - https://learn.microsoft.com/en-us/training/paths/bicep-azure-pipelines/
